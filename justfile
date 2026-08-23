@@ -44,12 +44,11 @@ compat OUTPUT: (_require "java")
     cp {{ COMPAT_RELEASE_AAR_PATH }} '{{ OUTPUT }}'
 
 # embed a DEX (default: release) into a distributable copy of the plugin .py
-embed DEX_PATH=RELEASE_DEX_PATH OUTPUT=DIST_PY BUILD_TYPE="release": (_require "uv")
+embed DEX_PATH=RELEASE_DEX_PATH OUTPUT=DIST_PY: (_require "uv")
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "$(dirname '{{ OUTPUT }}')"
-    uv run python tools/embed_dex.py '{{ DEX_PATH }}' '{{ PLUGIN_PY }}' '{{ OUTPUT }}' \
-        --build-type '{{ BUILD_TYPE }}'
+    uv run python tools/embed_dex.py '{{ DEX_PATH }}' '{{ PLUGIN_PY }}' '{{ OUTPUT }}'
 
 # watch the plugin source + debug DEX and live-reload on device via extera dev-sync
 watch *ARGS: (_require "uv" "adb")

@@ -1,6 +1,6 @@
 # fmt: off
 from android.webkit import ValueCallback
-from java import dynamic_proxy, jarray, jclass
+from java import dynamic_proxy
 from org.telegram.ui.ActionBar import AlertDialog
 from client_utils import get_last_fragment
 from ui.bulletin import BulletinHelper
@@ -26,10 +26,6 @@ __min_version__ = "12.1.1"
 LOGCAT_TAG = __id__
 
 JVM_PLUGIN_CLASS = "ru.n08i40k.badges.Plugin"
-
-# stamped by tools/embed_dex.py; "debug" while developing (dev-sync/live reload)
-BUILD_TYPE = "debug"
-IS_RELEASE = BUILD_TYPE == "release"
 
 DEX_COMMENT_BEGIN = "# === EMDEDDED DEX BEGIN ==="
 DEX_COMMENT_END = "# === EMDEDDED DEX END ==="
@@ -75,10 +71,13 @@ class JvmPluginBridge:
         self.klass = None
 
     def load(self):
-        host_loader = ApplicationLoader.applicationContext.getClassLoader()
+        """Load the engine into a loader of our own, never into the host's.
 
-        if IS_RELEASE and self._load_from_host_class_loader(host_loader):
-            return
+        Grafting the dex into the host class loader turned out to be unreliable,
+        so the plugin always gets its own InMemoryDexClassLoader: the classes
+        stay ejectable and cannot clash with anything the host already holds.
+        """
+        host_loader = ApplicationLoader.applicationContext.getClassLoader()
 
         dex_data = self._read_embedded_dex()
         if dex_data is None:
@@ -92,62 +91,9 @@ class JvmPluginBridge:
                 host_loader,
             )
 
-            if IS_RELEASE and self._graft_into_host_class_loader(loader, host_loader):
-                if self._load_from_host_class_loader(host_loader):
-                    return
-                self.plugin.log(
-                    "Grafted dex is not visible to the host class loader; "
-                    "falling back to the child loader"
-                )
-
             self.klass = loader.loadClass(String(JVM_PLUGIN_CLASS))
         except Exception as e:
             self.plugin.log_exception("Failed to load DEX", e)
-
-    def _load_from_host_class_loader(self, host_loader: Any) -> bool:
-        try:
-            self.klass = host_loader.loadClass(String(JVM_PLUGIN_CLASS))
-        except Exception:
-            return False
-
-        self.plugin.log("JVM plugin loaded by the host class loader")
-        return True
-
-    def _graft_into_host_class_loader(self, loader: Any, host_loader: Any) -> bool:
-        try:
-            path_list_field = (
-                jclass("dalvik.system.BaseDexClassLoader")
-                .getClass()
-                .getDeclaredField(String("pathList"))
-            )
-            path_list_field.setAccessible(True)
-
-            elements_field = (
-                jclass("dalvik.system.DexPathList")
-                .getClass()
-                .getDeclaredField(String("dexElements"))
-            )
-            elements_field.setAccessible(True)
-
-            host_path_list = path_list_field.get(host_loader)
-            plugin_path_list = path_list_field.get(loader)
-
-            merged = list(elements_field.get(host_path_list)) + list(
-                elements_field.get(plugin_path_list)
-            )
-            elements_field.set(
-                host_path_list,
-                jarray(jclass("dalvik.system.DexPathList$Element"))(merged),
-            )
-        except Exception as e:
-            self.plugin.log_exception(
-                "Failed to graft the plugin dex into the host class loader",
-                e,
-            )
-            return False
-
-        self.plugin.log("Plugin dex grafted into the host class loader")
-        return True
 
     def call(self, name: str, *args: Any, types: tuple = ()) -> Any:
         if self.klass is None:
@@ -378,10 +324,6 @@ class TemplatePlugin(BasePlugin):
         jvm_plugin = getattr(self, "jvm_plugin", None)
 
         if jvm_plugin is None or jvm_plugin.klass is None:
-            return
-
-        if IS_RELEASE:
-            self.log("Release build: JVM plugin eject is disabled")
             return
 
         try:

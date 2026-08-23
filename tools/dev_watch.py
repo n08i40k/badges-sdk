@@ -49,8 +49,7 @@ def _build_temp(source_path: str, dex_path: str, temp_path: str) -> str | None:
             source = f.read()
         with open(dex_path, "rb") as f:
             dex = f.read()
-        # the watcher always ships the debug dex: the plugin must stay ejectable
-        content = embed_source(source, dex, "debug")
+        content = embed_source(source, dex)
     except (OSError, ValueError) as e:
         logger.error(f"Failed to embed '{dex_path}' into '{source_path}': {e}")
         return None
