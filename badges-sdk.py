@@ -17,9 +17,10 @@ from typing import Optional, Any, cast
 
 __id__ = "badges-sdk"
 __name__ = "Badges SDK"
-__description__ = "Шаблон плагина exteraGram с DEX, встроенным прямо в исходник"
+__description__ = "Библиотека, позволяющая другим плагинам добавлять неограниченное количество бейджей пользователям.\n\nНе нарушает правила exteraGram, так так не вмешивается в работу существующих бейджей, а добавляет свою реализацию, не конфликтующую с бейджами самого exteraGram."
 __author__ = "@n08i40k_extera"
 __version__ = "0.0.0"
+__icon__ = "HowDidYouDoThis/17"
 __min_version__ = "12.1.1"
 
 LOGCAT_TAG = __id__
