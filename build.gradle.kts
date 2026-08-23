@@ -7,6 +7,8 @@ import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import org.gradle.api.Project
 import org.gradle.api.artifacts.type.ArtifactTypeDefinition
+import org.gradle.api.file.FileCollection
+import java.util.concurrent.Callable
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.coreLibraryDesugaring
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -82,8 +84,6 @@ private fun remapClassBytes(bytes: ByteArray): ByteArray {
     return cw.toByteArray()
 }
 
-private fun File.isJarFile(): Boolean = isFile && extension.equals("jar", ignoreCase = true)
-
 private val MODULE_NAME_WITH_VERSION = Regex("""^(.+?)-\d[\w.+-]*$""")
 
 private fun File.artifactKey(): String {
@@ -139,10 +139,11 @@ private fun File.extractAarJars(outputDir: File): List<String> {
     }
 }
 
-private fun Project.resolveClasspathArtifactPaths(
-    configurationName: String,
-    extractionRoot: File
-): List<String> =
+// The returned FileCollection carries the task dependencies that build the artifacts, so
+// the dex task must depend on it: a project dependency (:api) resolves to a jar that is
+// only produced by the owning module's bundle task, and without that dependency the path
+// exists on the classpath while the file itself was never built.
+private fun Project.classpathArtifactFiles(configurationName: String): FileCollection? =
     configurations.findByName(configurationName)
         ?.incoming
         ?.artifactView {
@@ -155,11 +156,27 @@ private fun Project.resolveClasspathArtifactPaths(
             }
         }
         ?.files
+
+private fun Project.resolveClasspathArtifactPaths(
+    configurationName: String,
+    extractionRoot: File
+): List<String> =
+    classpathArtifactFiles(configurationName)
         ?.files
         .orEmpty()
         .flatMap { artifact ->
             when {
-                artifact.isJarFile() -> listOf(artifact.absolutePath)
+                artifact.extension.equals("jar", ignoreCase = true) -> {
+                    // a resolved path that does not exist means the producing task never ran:
+                    // silently skipping it drops classes from the dex (see classpathArtifactFiles)
+                    if (!artifact.isFile) {
+                        throw GradleException(
+                            "Classpath entry of '$configurationName' was never built: " +
+                                    artifact.absolutePath
+                        )
+                    }
+                    listOf(artifact.absolutePath)
+                }
                 artifact.extension.equals("aar", ignoreCase = true) ->
                     artifact.extractAarJars(extractionRoot.resolve(configurationName))
 
@@ -335,6 +352,16 @@ fun registerBuildDexTask(variant: String) {
     tasks.register(taskName) {
         group = "build"
         dependsOn(compileKotlinTask, compileJavaTask)
+        // resolved lazily: AGP creates the variant configurations after this script is evaluated
+        dependsOn(
+            Callable {
+                listOfNotNull(
+                    project.classpathArtifactFiles("${variant}RuntimeClasspath"),
+                    project.classpathArtifactFiles("${variant}CompileClasspath"),
+                    project.classpathArtifactFiles(embed.name)
+                )
+            }
+        )
 
         doLast {
             val buildDirFile = layout.buildDirectory.asFile.get()
@@ -406,7 +433,6 @@ fun registerBuildDexTask(variant: String) {
                     }
                 }
                 (filteredRuntimeJars + embeddedJars).distinct().map(::File).forEach { jar ->
-                    if (!jar.exists()) return@forEach
                     ZipFile(jar).use { zip ->
                         zip.entries().asSequence().filter { !it.isDirectory }.forEach { entry ->
                             val bytes = zip.getInputStream(entry).readBytes()
