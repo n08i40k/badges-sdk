@@ -5,14 +5,17 @@ from org.telegram.ui.ActionBar import AlertDialog
 from client_utils import get_last_fragment
 from ui.bulletin import BulletinHelper
 from android_utils import run_on_ui_thread, copy_to_clipboard
+import threading
 import traceback
+from android.content import DialogInterface
+from android.os import Process
 from android.util import Log
 from base_plugin import BasePlugin
 from org.telegram.messenger import ApplicationLoader, LocaleController
 from java.nio import ByteBuffer
 from dalvik.system import InMemoryDexClassLoader
 import os
-from java.lang import Class, String
+from java.lang import Class, String, System
 from typing import Optional, Any, cast
 
 __id__ = "badges-sdk"
@@ -23,9 +26,17 @@ __version__ = "1.0.1"
 __icon__ = "HowDidYouDoThis/17"
 __min_version__ = "12.1.1"
 
+DEBUG_MODE = False
 LOGCAT_TAG = __id__
 
 JVM_PLUGIN_CLASS = "ru.n08i40k.badges.Plugin"
+
+SETTING_LAST_LOADED_VERSION = "last_loaded_version"
+
+# The engine is never ejected in release, so a second dex would leave two live
+# instances hooked at once. A plugin reload gets a fresh Python module, so the
+# marker has to live in the JVM system properties to survive it.
+ENGINE_LOADED_PROPS_KEY = "ru.n08i40k.badges.engine.loaded"
 
 DEX_COMMENT_BEGIN = "# === EMDEDDED DEX BEGIN ==="
 DEX_COMMENT_END = "# === EMDEDDED DEX END ==="
@@ -44,12 +55,25 @@ I18N_DIALOG: dict[str, dict[str, str]] = {
         "en": "OK",
         "ru": "ОК",
     },
+    "dialog.update_restart.title": {
+        "en": "Client restart required",
+        "ru": "Требуется перезапуск клиента",
+    },
+    "dialog.update_restart.message": {
+        "en": "Badges SDK was updated from {previous} to {current}. Restart the client to finish the update.",
+        "ru": "Badges SDK обновлён с {previous} до {current}. Перезапустите клиент, чтобы завершить обновление.",
+    },
+    "dialog.update_restart.restart": {"en": "Restart", "ru": "Перезапустить"},
 }
 
 I18N_STATUS: dict[str, dict[str, str]] = {
     "status.error.dex.missing": {
         "en": "Plugin engine is missing from the source file",
         "ru": "Движок плагина отсутствует в файле плагина",
+    },
+    "status.error.update.restart_failed": {
+        "en": "Couldn't restart client",
+        "ru": "Не удалось перезапустить клиент",
     },
 }
 
@@ -59,6 +83,20 @@ I18N_STRINGS: dict[str, dict[str, str]] = {
 }
 
 # fmt: on
+
+
+def _is_engine_loaded() -> bool:
+    try:
+        return System.getProperty(String(ENGINE_LOADED_PROPS_KEY)) is not None
+    except Exception:
+        return False
+
+
+def _mark_engine_loaded():
+    try:
+        System.setProperty(String(ENGINE_LOADED_PROPS_KEY), String(__version__))
+    except Exception:
+        pass
 
 
 class JvmPluginBridge:
@@ -77,6 +115,13 @@ class JvmPluginBridge:
         so the plugin always gets its own InMemoryDexClassLoader: the classes
         stay ejectable and cannot clash with anything the host already holds.
         """
+        if not DEBUG_MODE and _is_engine_loaded():
+            self.plugin.log(
+                "The engine is already loaded in this process: "
+                "refusing to inject a second instance"
+            )
+            return
+
         host_loader = ApplicationLoader.applicationContext.getClassLoader()
 
         dex_data = self._read_embedded_dex()
@@ -92,6 +137,7 @@ class JvmPluginBridge:
             )
 
             self.klass = loader.loadClass(String(JVM_PLUGIN_CLASS))
+            _mark_engine_loaded()
         except Exception as e:
             self.plugin.log_exception("Failed to load DEX", e)
 
@@ -191,6 +237,9 @@ class TemplatePlugin(BasePlugin):
     def _show_error(self, message: str):
         run_on_ui_thread(lambda: BulletinHelper.show_error(message))
 
+    def _show_info(self, message: str):
+        run_on_ui_thread(lambda: BulletinHelper.show_info(message))
+
     def _t(self, key: str, **kwargs: Any) -> str:
         values = I18N_STRINGS.get(key)
         if values is None:
@@ -279,6 +328,106 @@ class TemplatePlugin(BasePlugin):
 
         run_on_ui_thread(show)
 
+    def _get_last_loaded_version(self) -> str:
+        try:
+            return str(self.get_setting(SETTING_LAST_LOADED_VERSION, ""))
+        except Exception as e:
+            self.log_exception("Failed to read last loaded plugin version", e)
+            return ""
+
+    def _persist_current_loaded_version(self):
+        try:
+            self.set_setting(SETTING_LAST_LOADED_VERSION, __version__)
+        except Exception as e:
+            self.log_exception("Failed to persist last loaded plugin version", e)
+
+    def _should_pause_load_for_update(self) -> bool:
+        if DEBUG_MODE:
+            return False
+
+        previous_version = self._get_last_loaded_version()
+
+        if len(previous_version) == 0 or previous_version == __version__:
+            self._persist_current_loaded_version()
+            return False
+
+        self.log(
+            f"Plugin was updated from {previous_version} to {__version__}: "
+            "load paused until the client restarts"
+        )
+        self._show_update_restart_dialog(previous_version)
+        return True
+
+    def _show_update_restart_dialog(self, previous_version: str):
+        def show():
+            try:
+                fragment = get_last_fragment()
+            except Exception:
+                fragment = None
+
+            message = self._t(
+                "dialog.update_restart.message",
+                previous=previous_version,
+                current=__version__,
+            )
+
+            if fragment is None:
+                self.log("Update restart dialog deferred: UI context is unavailable")
+                self._schedule_update_restart_dialog_retry(previous_version)
+                return
+
+            self_outer = self
+
+            class RestartClickListener(
+                dynamic_proxy(AlertDialog.OnButtonClickListener)
+            ):
+                def onClick(self, _dialog: AlertDialog, _which: int) -> None:
+                    self_outer._persist_current_loaded_version()
+                    self_outer._restart_client()
+
+            class DismissListener(dynamic_proxy(DialogInterface.OnDismissListener)):
+                def onDismiss(self, arg0) -> None:
+                    self_outer._persist_current_loaded_version()
+                    self_outer._restart_client()
+
+            try:
+                fragment.showDialog(
+                    AlertDialog.Builder(fragment.getContext())
+                    .setTitle(String(self._t("dialog.update_restart.title")))
+                    .setMessage(String(message))
+                    .setPositiveButton(
+                        String(self._t("dialog.update_restart.restart")),
+                        RestartClickListener(),
+                    )
+                    .setOnDismissListener(DismissListener())
+                    .setOnPreDismissListener(DismissListener())
+                    .create()
+                )
+            except Exception as e:
+                self.log_exception("Failed to show update restart dialog", e)
+                self._show_info(message)
+                self._schedule_update_restart_dialog_retry(previous_version)
+
+        run_on_ui_thread(show)
+
+    def _schedule_update_restart_dialog_retry(self, previous_version: str):
+        timer = threading.Timer(
+            1.0,
+            lambda: self._show_update_restart_dialog(previous_version),
+        )
+        timer.daemon = True
+        timer.start()
+
+    def _restart_client(self):
+        def restart():
+            try:
+                Process.killProcess(Process.myPid())
+            except Exception as e:
+                self.log_exception("Failed to restart client", e)
+                self._show_error(self._t("status.error.update.restart_failed"))
+
+        run_on_ui_thread(restart)
+
     def _prepare_jvm_plugin(self) -> bool:
         self.jvm_plugin = JvmPluginBridge(self)
         self.jvm_plugin.load()
@@ -307,6 +456,9 @@ class TemplatePlugin(BasePlugin):
 
     def on_plugin_load(self):
         self._start_load_logging()
+
+        if self._should_pause_load_for_update():
+            return
 
         if not self._prepare_jvm_plugin():
             return
