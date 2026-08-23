@@ -1,3 +1,6 @@
+API_RELEASE_AAR_PATH := `realpath -m api/build/outputs/aar/api-release.aar`
+COMPAT_RELEASE_AAR_PATH := `realpath -m compat/build/outputs/aar/compat-release.aar`
+
 RELEASE_DEX_PATH := `realpath -m build/outputs/dex/release/classes.dex`
 DEBUG_DEX_PATH := `realpath -m build/outputs/dex/debug/classes.dex`
 
@@ -30,15 +33,23 @@ loc: (_require "java")
 
 # build the release DEX
 ci: (_require "java")
+    ./gradlew compat:build
     ./gradlew buildDexRelease
-    cp {{ RELEASE_DEX_PATH }} ./
+    cp {{ COMPAT_RELEASE_AAR_PATH }} ./compat.aar
+    cp {{ RELEASE_DEX_PATH }} ./classes.dex
+
+# build the consumer-side compat aar and copy it into a plugin that uses the SDK
+compat OUTPUT: (_require "java")
+    ./gradlew compat:assembleRelease
+    cp {{ COMPAT_RELEASE_AAR_PATH }} '{{ OUTPUT }}'
 
 # embed a DEX (default: release) into a distributable copy of the plugin .py
-embed DEX_PATH=RELEASE_DEX_PATH OUTPUT=DIST_PY: (_require "uv")
+embed DEX_PATH=RELEASE_DEX_PATH OUTPUT=DIST_PY BUILD_TYPE="release": (_require "uv")
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "$(dirname '{{ OUTPUT }}')"
-    uv run python tools/embed_dex.py '{{ DEX_PATH }}' '{{ PLUGIN_PY }}' '{{ OUTPUT }}'
+    uv run python tools/embed_dex.py '{{ DEX_PATH }}' '{{ PLUGIN_PY }}' '{{ OUTPUT }}' \
+        --build-type '{{ BUILD_TYPE }}'
 
 # watch the plugin source + debug DEX and live-reload on device via extera dev-sync
 watch *ARGS: (_require "uv" "adb")

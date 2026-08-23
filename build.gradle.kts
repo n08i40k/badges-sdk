@@ -6,6 +6,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import org.gradle.api.Project
+import org.gradle.api.artifacts.type.ArtifactTypeDefinition
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.coreLibraryDesugaring
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -143,7 +144,18 @@ private fun Project.resolveClasspathArtifactPaths(
     extractionRoot: File
 ): List<String> =
     configurations.findByName(configurationName)
-        ?.resolve()
+        ?.incoming
+        ?.artifactView {
+            // Resolving the raw configuration is ambiguous for project dependencies: an AGP
+            // library exposes a secondary variant per artifact type (manifest, res, symbols, ...)
+            // and nothing in the request picks one. Asking for the classes jars is also what
+            // AGP itself does, and it pre-extracts aar classes for us.
+            attributes {
+                attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "android-classes-jar")
+            }
+        }
+        ?.files
+        ?.files
         .orEmpty()
         .flatMap { artifact ->
             when {
@@ -200,6 +212,7 @@ plugins {
     id("com.android.library") version "9.0.1"
     id("dev.reformator.stacktracedecoroutinator") version "2.6.1"
     id("de.comahe.i18n4k") version "0.11.2"
+    alias(libs.plugins.jetbrains.kotlin.jvm) apply false
 }
 
 i18n4k {
@@ -293,6 +306,8 @@ val embed by configurations.creating {
 }
 
 dependencies {
+    implementation(project(":api"))
+
     compileOnly(libs.androidx.recyclerview)
     compileOnly(libs.androidx.lifecycle.viewmodel)
 

@@ -1,20 +1,18 @@
 # fmt: off
 from android.webkit import ValueCallback
-from java import dynamic_proxy
+from java import dynamic_proxy, jarray, jclass
 from org.telegram.ui.ActionBar import AlertDialog
 from client_utils import get_last_fragment
 from ui.bulletin import BulletinHelper
 from android_utils import run_on_ui_thread, copy_to_clipboard
 import traceback
 from android.util import Log
-import threading
-from ui.settings import Header, Text
-from base_plugin import MenuItemType, MenuItemData, BasePlugin
+from base_plugin import BasePlugin
 from org.telegram.messenger import ApplicationLoader, LocaleController
 from java.nio import ByteBuffer
 from dalvik.system import InMemoryDexClassLoader
 import os
-from java.lang import Class, String, Long
+from java.lang import Class, String
 from typing import Optional, Any, cast
 
 __id__ = "badges-sdk"
@@ -28,27 +26,13 @@ LOGCAT_TAG = __id__
 
 JVM_PLUGIN_CLASS = "ru.n08i40k.badges.Plugin"
 
+# stamped by tools/embed_dex.py; "debug" while developing (dev-sync/live reload)
+BUILD_TYPE = "debug"
+IS_RELEASE = BUILD_TYPE == "release"
+
 DEX_COMMENT_BEGIN = "# === EMDEDDED DEX BEGIN ==="
 DEX_COMMENT_END = "# === EMDEDDED DEX END ==="
 
-
-I18N_SETTINGS: dict[str, dict[str, str]] = {
-    "settings.example.title": {
-        "en": "Example button in plugin settings",
-        "ru": "Пример кнопки в меню настроек плагина",
-    },
-}
-
-I18N_MENU: dict[str, dict[str, str]] = {
-    "menu.chat.example.title": {
-        "en": "Example action",
-        "ru": "Пример действия",
-    },
-    "menu.chat.example.description": {
-        "en": "Example button in chat context menu",
-        "ru": "Пример кнопки в контекстном меню чата",
-    },
-}
 
 I18N_DIALOG: dict[str, dict[str, str]] = {
     "dialog.load_crash.title": {
@@ -66,10 +50,6 @@ I18N_DIALOG: dict[str, dict[str, str]] = {
 }
 
 I18N_STATUS: dict[str, dict[str, str]] = {
-    "status.error.chat.detect_current_failed": {
-        "en": "Failed to detect the current chat",
-        "ru": "Не удалось определить текущий чат",
-    },
     "status.error.dex.missing": {
         "en": "Plugin engine is missing from the source file",
         "ru": "Движок плагина отсутствует в файле плагина",
@@ -77,27 +57,11 @@ I18N_STATUS: dict[str, dict[str, str]] = {
 }
 
 I18N_STRINGS: dict[str, dict[str, str]] = {
-    **I18N_SETTINGS,
-    **I18N_MENU,
     **I18N_DIALOG,
     **I18N_STATUS,
 }
 
 # fmt: on
-
-
-def _as_dialog_id(value: Any) -> Optional[int]:
-    try:
-        return int(value) or None
-    except Exception:
-        return None
-
-
-def _dialog_id_of(obj: Any) -> Optional[int]:
-    try:
-        return _as_dialog_id(obj.getDialogId())
-    except Exception:
-        return None
 
 
 class JvmPluginBridge:
@@ -110,6 +74,11 @@ class JvmPluginBridge:
         self.klass = None
 
     def load(self):
+        host_loader = ApplicationLoader.applicationContext.getClassLoader()
+
+        if IS_RELEASE and self._load_from_host_class_loader(host_loader):
+            return
+
         dex_data = self._read_embedded_dex()
         if dex_data is None:
             self.plugin.log("Embedded DEX is unavailable; plugin will not load")
@@ -119,18 +88,67 @@ class JvmPluginBridge:
         try:
             loader = InMemoryDexClassLoader(
                 ByteBuffer.wrap(dex_data),  # ty:ignore[invalid-argument-type]
-                ApplicationLoader.applicationContext.getClassLoader(),
+                host_loader,
             )
+
+            if IS_RELEASE and self._graft_into_host_class_loader(loader, host_loader):
+                if self._load_from_host_class_loader(host_loader):
+                    return
+                self.plugin.log(
+                    "Grafted dex is not visible to the host class loader; "
+                    "falling back to the child loader"
+                )
+
             self.klass = loader.loadClass(String(JVM_PLUGIN_CLASS))
         except Exception as e:
             self.plugin.log_exception("Failed to load DEX", e)
 
-    def call(self, name: str, *args: Any, types: tuple = ()) -> Any:
-        """Invoke a static method of the loaded JVM plugin class.
+    def _load_from_host_class_loader(self, host_loader: Any) -> bool:
+        try:
+            self.klass = host_loader.loadClass(String(JVM_PLUGIN_CLASS))
+        except Exception:
+            return False
 
-        Raises if the class is not loaded or the call itself fails; callers
-        decide whether that is fatal for them.
-        """
+        self.plugin.log("JVM plugin loaded by the host class loader")
+        return True
+
+    def _graft_into_host_class_loader(self, loader: Any, host_loader: Any) -> bool:
+        try:
+            path_list_field = (
+                jclass("dalvik.system.BaseDexClassLoader")
+                .getClass()
+                .getDeclaredField(String("pathList"))
+            )
+            path_list_field.setAccessible(True)
+
+            elements_field = (
+                jclass("dalvik.system.DexPathList")
+                .getClass()
+                .getDeclaredField(String("dexElements"))
+            )
+            elements_field.setAccessible(True)
+
+            host_path_list = path_list_field.get(host_loader)
+            plugin_path_list = path_list_field.get(loader)
+
+            merged = list(elements_field.get(host_path_list)) + list(
+                elements_field.get(plugin_path_list)
+            )
+            elements_field.set(
+                host_path_list,
+                jarray(jclass("dalvik.system.DexPathList$Element"))(merged),
+            )
+        except Exception as e:
+            self.plugin.log_exception(
+                "Failed to graft the plugin dex into the host class loader",
+                e,
+            )
+            return False
+
+        self.plugin.log("Plugin dex grafted into the host class loader")
+        return True
+
+    def call(self, name: str, *args: Any, types: tuple = ()) -> Any:
         if self.klass is None:
             raise RuntimeError(f"cannot call {name}: JVM plugin is not loaded")
 
@@ -193,152 +211,11 @@ class JvmPluginBridge:
             return None
 
 
-class ChatContextMenu:
-    """Chat context menu items. Keys must match ChatContextMenuButton on the DEX side."""
-
-    EXAMPLE = "example"
-
-    MENU_ITEMS: tuple[dict[str, Any], ...] = (
-        {
-            "key": EXAMPLE,
-            "text_key": "menu.chat.example.title",
-            "subtext_key": "menu.chat.example.description",
-            "icon": "msg_settings",
-            "priority": 1000,
-        },
-    )
-
-    # the payload extera hands to on_click is either the chat fragment itself or
-    # a mapping that carries the dialog id (or the fragment) under one of these keys
-    PAYLOAD_DIALOG_KEYS = ("dialog_id", "dialogId")
-    PAYLOAD_FRAGMENT_KEYS = ("chatActivity", "fragment")
-
-    def __init__(self, plugin: "TemplatePlugin"):
-        self.plugin = plugin
-        self._item_ids: dict[str, str] = {}
-
-    def register(self):
-        self.unregister()
-
-        for item in self.MENU_ITEMS:
-            key: str = item["key"]
-
-            try:
-                item_id = self.plugin.add_menu_item(
-                    MenuItemData(
-                        menu_type=MenuItemType.CHAT_ACTION_MENU,
-                        text=self.plugin._t(item["text_key"]),
-                        subtext=self.plugin._t(item["subtext_key"]),
-                        icon=item["icon"],
-                        on_click=lambda payload, button=key: self._on_click(
-                            button, payload
-                        ),
-                        priority=item["priority"],
-                    )
-                )
-
-                self._item_ids[key] = str(item_id)
-            except Exception as e:
-                self.plugin.log_exception(
-                    f"Failed to register chat context menu item {key}",
-                    e,
-                )
-
-    def unregister(self):
-        for key, item_id in tuple(self._item_ids.items()):
-            try:
-                self.plugin.remove_menu_item(item_id)
-            except Exception as e:
-                self.plugin.log_exception(
-                    f"Failed to remove chat context menu item {key}",
-                    e,
-                )
-
-        self._item_ids.clear()
-
-    def _on_click(self, key: str, payload: Any):
-        dialog_id = self._extract_dialog_id(payload)
-        if dialog_id is None:
-            self.plugin.log(
-                f"Chat context menu click payload missing dialog id for {key}: {payload}"
-            )
-            self.plugin._show_error(
-                self.plugin._t("status.error.chat.detect_current_failed")
-            )
-            return
-
-        try:
-            self.plugin.jvm_plugin.call(
-                "invokeChatContextMenuCallback",
-                String(key),
-                Long(dialog_id),
-                types=(String.getClass(), Long.TYPE),
-            )
-        except Exception as e:
-            self.plugin.log_exception(
-                f"Failed to execute chat context menu callback {key} for {dialog_id}",
-                e,
-            )
-
-    def _extract_dialog_id(self, payload: Any) -> Optional[int]:
-        getter = getattr(payload, "get", None)
-        if getter is None:
-            return _dialog_id_of(payload)
-
-        for key in self.PAYLOAD_DIALOG_KEYS:
-            if (dialog_id := _as_dialog_id(getter(key))) is not None:
-                return dialog_id
-
-        for key in self.PAYLOAD_FRAGMENT_KEYS:
-            if (dialog_id := _dialog_id_of(getter(key))) is not None:
-                return dialog_id
-
-        return _dialog_id_of(payload)
-
-
-class SettingsActions:
-    """Plugin settings items. Keys must match SettingsActionButton on the DEX side."""
-
-    EXAMPLE = "example"
-
-    def __init__(self, plugin: "TemplatePlugin"):
-        self.plugin = plugin
-
-    def build_settings(self) -> list[Any]:
-        return [
-            Header(text=self.plugin._t("settings.example.title")),
-            Text(
-                text=self.plugin._t("settings.example.title"),
-                icon="msg_settings",
-                on_click=lambda _: self._on_click(self.EXAMPLE),
-            ),
-        ]
-
-    def _on_click(self, key: str):
-        try:
-            self.plugin.jvm_plugin.call(
-                "invokeSettingsActionCallback",
-                String(key),
-                types=(String.getClass(),),
-            )
-        except Exception as e:
-            self.plugin.log_exception(
-                f"Failed to execute settings callback {key}",
-                e,
-            )
-
-
 class TemplatePlugin(BasePlugin):
-    _full_load_lock = threading.Lock()
-    _eject_lock = threading.Lock()
-
     _load_logging_active = False
     _load_log_buffer: list[str] = []
-    _full_load_started = False
-    _ejected = False
 
     jvm_plugin: JvmPluginBridge
-    chat_context_menu: Optional[ChatContextMenu] = None
 
     def log(self, message: Any):
         text = str(message)
@@ -363,9 +240,6 @@ class TemplatePlugin(BasePlugin):
             for line in chunk.rstrip().splitlines():
                 if line:
                     self.log(line)
-
-    def create_settings(self) -> list[Any]:
-        return SettingsActions(self).build_settings()
 
     def _show_error(self, message: str):
         run_on_ui_thread(lambda: BulletinHelper.show_error(message))
@@ -484,61 +358,20 @@ class TemplatePlugin(BasePlugin):
         )
         self.log("JVM plugin injected successfully")
 
-    def _register_ui(self):
-        self.chat_context_menu = ChatContextMenu(self)
-        self.chat_context_menu.register()
-
-    def _finalize_jvm_plugin_inject(self):
-        self.jvm_plugin.call("finalizeInject")
-        self.log("JVM plugin finalizeInject completed")
-
-    def _run_plugin_load(self):
-        with self._full_load_lock:
-            if self._full_load_started:
-                return
-            self._full_load_started = True
+    def on_plugin_load(self):
+        self._start_load_logging()
 
         if not self._prepare_jvm_plugin():
-            with self._full_load_lock:
-                self._full_load_started = False
-            return
-
-        for stage, action in (
-            ("inject", self._inject_jvm_plugin),
-            ("register ui", self._register_ui),
-            ("finalizeInject", self._finalize_jvm_plugin_inject),
-        ):
-            try:
-                action()
-            except BaseException as e:
-                self._handle_load_failure(stage, e)
-                self.on_plugin_eject()
-                return
-
-        self._stop_load_logging()
-
-    def _unregister_chat_context_menu(self, reason: str):
-        if self.chat_context_menu is None:
             return
 
         try:
-            self.chat_context_menu.unregister()
-        except Exception as e:
-            self.log_exception(f"Failed to unregister chat context menu ({reason})", e)
+            self._inject_jvm_plugin()
+        except BaseException as e:
+            self._handle_load_failure("inject", e)
+            self.jvm_plugin.klass = None
+            return
 
-    def on_plugin_load(self):
-        self._start_load_logging()
-        self._ejected = False
-        self._full_load_started = False
-
-        thread = threading.Thread(
-            target=self._run_plugin_load,
-            name=f"{__id__}-continue-plugin-load",
-            daemon=True,
-        )
-        thread.start()
-
-        return thread
+        self._stop_load_logging()
 
     def on_plugin_unload(self):
         jvm_plugin = getattr(self, "jvm_plugin", None)
@@ -546,7 +379,9 @@ class TemplatePlugin(BasePlugin):
         if jvm_plugin is None or jvm_plugin.klass is None:
             return
 
-        self._unregister_chat_context_menu("unload")
+        if IS_RELEASE:
+            self.log("Release build: JVM plugin eject is disabled")
+            return
 
         try:
             jvm_plugin.call("eject")
@@ -555,20 +390,6 @@ class TemplatePlugin(BasePlugin):
             self.log_exception("Failed to eject JVM plugin", e)
 
         jvm_plugin.klass = None
-
-    def on_plugin_eject(self):
-        with self._eject_lock:
-            if self._ejected:
-                return
-            self._ejected = True
-
-        self.log("JVM plugin instance lost: ejected by a concurrent reload")
-
-        self._unregister_chat_context_menu("eject")
-
-        jvm_plugin = getattr(self, "jvm_plugin", None)
-        if jvm_plugin is not None:
-            jvm_plugin.klass = None
 
 
 # === EMDEDDED DEX BEGIN ===

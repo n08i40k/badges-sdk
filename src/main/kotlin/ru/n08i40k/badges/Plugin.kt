@@ -1,72 +1,59 @@
 package ru.n08i40k.badges
 
-import android.content.Context
-import android.content.SharedPreferences
 import android.webkit.ValueCallback
-import androidx.annotation.AnyThread
-import de.comahe.i18n4k.config.I18n4kConfigDefault
-import de.comahe.i18n4k.createLocale
-import de.comahe.i18n4k.i18n4k
-import de.comahe.i18n4k.messages.formatter.MessageFormatterDefault
+import androidx.annotation.MainThread
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.job
-import kotlinx.coroutines.runBlocking
 import org.jetbrains.annotations.Blocking
-import org.telegram.messenger.ApplicationLoader
-import org.telegram.messenger.LocaleController
-import ru.n08i40k.badges.event.eject.EjectNotifier
-import ru.n08i40k.badges.extension.resolveLanguageCode
-import ru.n08i40k.badges.hook.impl.ExampleHookBundle
-import ru.n08i40k.badges.i18n.MessagePluralFormatter
-import ru.n08i40k.badges.registry.LockableActionRegistry
-import ru.n08i40k.badges.registry.LockableCallbackRegistry
+import org.telegram.messenger.UserConfig
+import ru.n08i40k.badges.api.BadgesSdk
+import ru.n08i40k.badges.emoji.EmojiRegistry
+import ru.n08i40k.badges.hook.impl.PluginUnloadHook
+import ru.n08i40k.badges.hook.impl.UserPutHookBundle
+import ru.n08i40k.badges.hook.impl.emoji.ChatAvatarContainerHookBundle
+import ru.n08i40k.badges.hook.impl.emoji.ChatMessageCellHookBundle
+import ru.n08i40k.badges.hook.impl.emoji.DialogCellHookBundle
+import ru.n08i40k.badges.hook.impl.emoji.ProfileActivityHookBundle
+import ru.n08i40k.badges.hook.impl.emoji.ProfileSearchCellHookBundle
+import ru.n08i40k.badges.hook.impl.emoji.StatusBadgeComponentHookBundle
+import ru.n08i40k.badges.hook.impl.emoji.UserCellHookBundle
+import ru.n08i40k.badges.util.BadgesCompat
 import ru.n08i40k.badges.util.Logger
-import ru.n08i40k.badges.util.RefCounter
+import ru.n08i40k.badges.util.UserPatcher
 import java.lang.reflect.Member
-import java.util.function.Supplier
-import kotlin.concurrent.thread
 import kotlin.time.Instant
 
 typealias LogReceiver = ValueCallback<String>
 
-/**
- * Entry point of the DEX part of the plugin.
- *
- * Every `@JvmStatic` method of the companion object is called reflectively from the
- * Python side, so their names and signatures must stay in sync with the plugin .py.
- */
 class Plugin private constructor() {
     @Suppress("unused")
     companion object {
         const val ID = "badges-sdk"
 
-        private const val HANDLE_KEY = "ru.n08i40k.badges.handle"
+        // prefix of the keys under which consumers register their wake-up Runnable
+        private const val WAITER_PROPS_KEY_PREFIX = "ru.n08i40k.badges.waiter."
 
-        @Volatile
-        private var WAS_INJECTED = false
+        // key the SDK publishes itself under; consumers resolve it reflectively, so it
+        // is part of the contract and must stay in sync with :compat
+        private const val SDK_PROPS_KEY = "ru.n08i40k.badges.BadgesService"
 
         @Volatile
         private var INSTANCE: Plugin? = null
 
+        @Volatile
+        private var WAS_INJECTED: Boolean = false
+
         private var VERSION: String? = null
 
-        fun isInjected(): Boolean = INSTANCE != null
-
         internal fun getInstance(): Plugin = INSTANCE!!
+
+        @JvmStatic
+        fun getVersion(): String? = VERSION
 
         @JvmStatic
         fun getBuildDate(): String = Instant
             .fromEpochMilliseconds(BuildConfig.BUILD_TIME.toLong())
             .toString()
-
-        @JvmStatic
-        fun getVersion(): String? = VERSION
 
         @Synchronized
         @Blocking
@@ -75,137 +62,101 @@ class Plugin private constructor() {
             version: String,
             logReceiver: LogReceiver,
         ) {
-            if (INSTANCE != null)
+            VERSION = version
+            Logger.setReceiver(logReceiver)
+
+            // release builds live in the host class-loader and are never ejected,
+            // so a plugin reload lands here with the instance still alive
+            if (INSTANCE != null) {
+                Logger.info("Plugin is already injected, reusing the existing instance")
                 return
+            }
 
             if (WAS_INJECTED)
                 throw IllegalStateException("Cannot inject plugin from same class-loader twice")
 
-            VERSION = version
             WAS_INJECTED = true
 
-            Logger.setReceiver(logReceiver)
+            Logger.tryOrFatal("create and inject plugin") {
+                val plugin = Plugin()
+                    .also { INSTANCE = it }
 
+                plugin.onInject()
+            }
+
+            notifyWaiters()
+        }
+
+        // consumers loaded before the SDK leave a Runnable in the system properties
+        // instead of polling for it
+        private fun notifyWaiters() {
             val props = System.getProperties()
 
-            // prevent two plugin injects concurrently (from different class-loaders)
-            synchronized(props) {
-                @Suppress("UNCHECKED_CAST")
-                (props.put(HANDLE_KEY, Supplier { ejectPromise() }) as? Supplier<Thread>)
-                    ?.apply {
-                        Logger.info("Plugin is probably injected in different class loader!")
+            val waiters = synchronized(props) {
+                props.keys
+                    .filterIsInstance<String>()
+                    .filter { it.startsWith(WAITER_PROPS_KEY_PREFIX) }
+                    .mapNotNull { props[it] as? Runnable }
+            }
 
-                        Logger.info("Ejecting old plugin...")
-                        get().join()
-                    }
-
-                i18n4k = I18n4kConfigDefault().apply {
-                    locale = createLocale(
-                        LocaleController
-                            .getInstance()
-                            .resolveLanguageCode()
-                    )
-                }
-                MessageFormatterDefault.registerMessageValueFormatters(MessagePluralFormatter)
-
-                Logger.tryOrFatal("create and inject plugin") {
-                    val plugin = Plugin()
-                        .also { INSTANCE = it }
-
-                    plugin.onInject()
+            for (waiter in waiters) {
+                try {
+                    waiter.run()
+                } catch (e: Throwable) {
+                    // a broken consumer must not take the SDK down with it
+                    Logger.fatal("Badges SDK waiter failed", e, preventEject = true)
                 }
             }
         }
 
-        /**
-         * Called after [inject] once the Python side has registered its UI. Put here
-         * everything that may touch the host UI or needs the plugin to be fully built.
-         */
+        @MainThread
         @Blocking
-        @Synchronized
         @JvmStatic
-        fun finalizeInject() {
-            // safely return as eject was called before finalizeInject
-            if (WAS_INJECTED && INSTANCE == null)
+        @Synchronized
+        fun eject() {
+            if (!BuildConfig.DEBUG) {
+                // the release dex is grafted into the host class-loader: its classes
+                // stay loaded anyway, so tearing the plugin down buys nothing
+                Logger.info("Eject is disabled in release builds")
                 return
+            }
 
-            // NPE is a bug, then it should not be silenced
-            INSTANCE!!.onFinalizeInject()
-        }
-
-        @JvmStatic
-        fun invokeChatContextMenuCallback(key: String, id: Long) = with(INSTANCE!!) {
-            chatContextMenuCallbackRegistry.get(key).accept(id)
-        }
-
-        @JvmStatic
-        fun invokeSettingsActionCallback(key: String) = with(INSTANCE!!) {
-            settingsActionCallbackRegistry.get(key).run()
-        }
-
-        @Synchronized
-        private fun ejectSynchronized() {
             Logger.tryOrFatal("Failed to eject plugin") {
                 INSTANCE?.onEject()
             }
 
+            val props = System.getProperties()
+
+            synchronized(props) {
+                if (props[SDK_PROPS_KEY] === BadgesSdkService)
+                    props.remove(SDK_PROPS_KEY)
+            }
+
             INSTANCE = null
         }
-
-        @AnyThread
-        private fun ejectPromise(): Thread =
-            thread(
-                contextClassLoader = Plugin::class.java.classLoader,
-                block = ::ejectSynchronized
-            )
-
-        @AnyThread
-        @JvmStatic
-        fun eject() {
-            ejectPromise()
-        }
-
-        @AnyThread
-        @JvmStatic
-        fun getSharedPrefs(): SharedPreferences =
-            ApplicationLoader.applicationContext.getSharedPreferences(
-                ID,
-                Context.MODE_PRIVATE
-            )
-
-        fun coroutineScope(): CoroutineScope =
-            INSTANCE!!.backgroundScope
-
-        fun childCoroutineScope(): CoroutineScope =
-            INSTANCE!!.backgroundScope.coroutineContext.let { CoroutineScope(it + SupervisorJob(it.job)) }
     }
-
-    val backgroundScope =
-        CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, exception ->
-            Logger.fatal("An unknown error occurred in background coroutine scope", exception)
-        })
 
     // installed hooks, unhooked on eject
     val hooks: ArrayList<XC_MethodHook.Unhook> = arrayListOf()
 
-    // callbacks invoked from the Python side
-    internal val chatContextMenuCallbackRegistry = LockableCallbackRegistry()
-    internal val settingsActionCallbackRegistry = LockableActionRegistry()
-
     private fun onInject() {
-        ChatContextMenuActions(this).register()
-        SettingsMenuActions(this).register()
-
         Logger.info("Injected!")
-    }
 
-    private fun onFinalizeInject() {
+        BadgesCompat.init()
+
+        UserPatcher.patchAllAccounts()
+
         Logger.tryOrFatal(
             "hook methods",
             ::hookMethods
         )
 
-        Logger.info("Inject finalized!")
+        val props = System.getProperties()
+
+        // prevent two plugin injects concurrently (from different class-loaders)
+        synchronized(props) {
+            props[SDK_PROPS_KEY] = BadgesSdkService as BadgesSdk
+        }
     }
 
     @Blocking
@@ -218,22 +169,15 @@ class Plugin private constructor() {
                 it::unhook
             )
         }
+
         hooks.clear()
 
-        backgroundScope.cancel()
+        EmojiRegistry.restoreAll()
+        BadgesSdkService.clear()
 
-        Logger.info("Waiting for background coroutines to finish..")
-        runBlocking { backgroundScope.coroutineContext.job.join() }
-        Logger.info("Background coroutines finished!")
+        UserPatcher.cleanup()
 
-        // released after every other eject subscriber is notified
-        EjectNotifier.subscribe(999) {
-            Logger.info("Waiting for ref counter to be zero..")
-            runBlocking { RefCounter.wait() }
-            Logger.info("No more refs from other threads!")
-        }
-
-        EjectNotifier.fire()
+        Logger.cleanup()
     }
 
     private fun hookMethods() {
@@ -264,7 +208,15 @@ class Plugin private constructor() {
         }
 
         val bundles = listOf(
-            ExampleHookBundle(),
+            PluginUnloadHook(),
+            UserPutHookBundle(),
+            DialogCellHookBundle(),
+            ChatMessageCellHookBundle(),
+            UserCellHookBundle(),
+            ProfileActivityHookBundle(),
+            ProfileSearchCellHookBundle(),
+            StatusBadgeComponentHookBundle(),
+            ChatAvatarContainerHookBundle(),
         )
 
         bundles.forEach { it.inject(::before, ::after) }

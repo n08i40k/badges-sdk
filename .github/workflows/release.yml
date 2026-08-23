@@ -93,10 +93,11 @@ jobs:
             --plugin-file "$PLUGIN_PY" \
             --pyproject-file pyproject.toml
 
-      - name: Build release DEX
+      - name: Build release DEX and compat AAR
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon -Dorg.gradle.java.home="$JAVA_HOME" buildDexRelease
+          ./gradlew --no-daemon -Dorg.gradle.java.home="$JAVA_HOME" compat:assembleRelease
 
       - name: Embed DEX into the plugin
         env:
@@ -110,11 +111,15 @@ jobs:
             build/outputs/dex/release/classes.dex \
             "$PLUGIN_PY" \
             "$release_dir/${PLUGIN_ID}.plugin"
+          cp compat/build/outputs/aar/compat-release.aar \
+            "$release_dir/${PLUGIN_ID}-compat.aar"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: ${{ runner.temp }}/release/${{ steps.plugin.outputs.id }}.plugin
+          subject-path: |
+            ${{ runner.temp }}/release/${{ steps.plugin.outputs.id }}.plugin
+            ${{ runner.temp }}/release/${{ steps.plugin.outputs.id }}-compat.aar
 
       - name: Configure Git author
         run: |
@@ -154,5 +159,6 @@ jobs:
           release_dir="$RUNNER_TEMP/release"
           gh release create "$VERSION" \
             "$release_dir/${PLUGIN_ID}.plugin#${PLUGIN_ID}.plugin" \
+            "$release_dir/${PLUGIN_ID}-compat.aar#${PLUGIN_ID}-compat.aar" \
             --title "$VERSION" \
             --notes ""
