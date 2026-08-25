@@ -12,7 +12,7 @@ from java.lang import Class, String, System
 from java.nio import ByteBuffer
 from org.telegram.messenger import ApplicationLoader
 
-BADGES_SDK_VERSION = "1.0.2"
+BADGES_SDK_VERSION = "1.1.0"
 
 _BADGES_SDK_ENGINE_CLASS = "ru.n08i40k.badges.Plugin"
 _BADGES_SDK_MARK_KEY = "ru.n08i40k.badges.engine.loaded"
