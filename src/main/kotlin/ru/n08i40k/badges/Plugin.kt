@@ -5,7 +5,6 @@ import androidx.annotation.MainThread
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import org.jetbrains.annotations.Blocking
-import org.telegram.messenger.UserConfig
 import ru.n08i40k.badges.api.BadgesSdk
 import ru.n08i40k.badges.emoji.EmojiRegistry
 import ru.n08i40k.badges.hook.impl.PluginUnloadHook

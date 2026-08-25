@@ -414,8 +414,6 @@ class Emoji : SwapAnimatedEmojiDrawable {
         }
     }
 
-    fun getPeerUserId(): Long = peerUserId
-
     fun setPeerUserId(peerUserId: Long) {
         this.peerUserId = peerUserId
         refreshState()
