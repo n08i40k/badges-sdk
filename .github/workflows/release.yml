@@ -108,7 +108,7 @@ jobs:
           rm -rf "$release_dir"
           mkdir -p "$release_dir"
           python tools/embed_dex.py \
-            build/outputs/dex/release/classes.dex \
+            dist/dex/release/classes.dex \
             "$PLUGIN_PY" \
             "$release_dir/${PLUGIN_ID}.plugin"
           cp compat/build/outputs/aar/compat-release.aar \

@@ -1,8 +1,8 @@
 API_RELEASE_AAR_PATH := `realpath -m api/build/outputs/aar/api-release.aar`
 COMPAT_RELEASE_AAR_PATH := `realpath -m compat/build/outputs/aar/compat-release.aar`
 
-RELEASE_DEX_PATH := `realpath -m build/outputs/dex/release/classes.dex`
-DEBUG_DEX_PATH := `realpath -m build/outputs/dex/debug/classes.dex`
+RELEASE_DEX_PATH := `realpath -m dist/dex/release/classes.dex`
+DEBUG_DEX_PATH := `realpath -m dist/dex/debug/classes.dex`
 
 PLUGIN_PY := `grep -ls '^__id__ = ' -- *.py | head -n1`
 DIST_PY := "dist/" + file_name(PLUGIN_PY)
