@@ -27,10 +27,6 @@ _require +COMMANDS:
 dex: (_require "java")
     ./gradlew buildDexDebug
 
-# generate i18n files (use added lines without full dex rebuild)
-loc: (_require "java")
-    ./gradlew generateI18n4kFiles
-
 # build the release DEX
 ci: (_require "java")
     ./gradlew compat:build
