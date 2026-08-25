@@ -34,21 +34,12 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve plugin source file
-        id: plugin
+      - name: Check the loader source
         run: |
-          plugin_py="$(grep -ls '^__id__ = ' -- *.py | head -n1)"
-          if [[ -z "$plugin_py" ]]; then
-            echo "No plugin .py with __id__ found in the repository root" >&2
+          if [[ ! -s loader/badges_sdk.py ]]; then
+            echo "loader/badges_sdk.py is missing" >&2
             exit 1
           fi
-          plugin_id="$(sed -n 's/^__id__ = "\(.*\)"$/\1/p' "$plugin_py")"
-          if [[ -z "$plugin_id" ]]; then
-            echo "Failed to read __id__ from $plugin_py" >&2
-            exit 1
-          fi
-          echo "file=${plugin_py}" >> "$GITHUB_OUTPUT"
-          echo "id=${plugin_id}" >> "$GITHUB_OUTPUT"
 
       - name: Ensure Telegram JARs exist
         run: |
@@ -83,43 +74,39 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Bump plugin version
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up just
+        uses: extractions/setup-just@v3
+
+      - name: Bump SDK version
         env:
           VERSION: ${{ inputs.version }}
-          PLUGIN_PY: ${{ steps.plugin.outputs.file }}
         run: |
           python scripts/prepare_release.py \
             --version "$VERSION" \
-            --plugin-file "$PLUGIN_PY" \
+            --loader-file loader/badges_sdk.py \
             --pyproject-file pyproject.toml
 
-      - name: Build release DEX and compat AAR
+      - name: Build the release artifacts
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+          VERSION: ${{ inputs.version }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon -Dorg.gradle.java.home="$JAVA_HOME" buildDexRelease
-          ./gradlew --no-daemon -Dorg.gradle.java.home="$JAVA_HOME" compat:assembleRelease
-
-      - name: Embed DEX into the plugin
-        env:
-          PLUGIN_PY: ${{ steps.plugin.outputs.file }}
-          PLUGIN_ID: ${{ steps.plugin.outputs.id }}
-        run: |
           release_dir="$RUNNER_TEMP/release"
           rm -rf "$release_dir"
           mkdir -p "$release_dir"
-          python tools/embed_dex.py \
-            dist/dex/release/classes.dex \
-            "$PLUGIN_PY" \
-            "$release_dir/${PLUGIN_ID}.plugin"
-          cp compat/build/outputs/aar/compat-release.aar \
-            "$release_dir/${PLUGIN_ID}-compat.aar"
+          just ci-release "$VERSION" "$release_dir"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            ${{ runner.temp }}/release/${{ steps.plugin.outputs.id }}.plugin
-            ${{ runner.temp }}/release/${{ steps.plugin.outputs.id }}-compat.aar
+            ${{ runner.temp }}/release/badges-sdk-loader.py
+            ${{ runner.temp }}/release/badges-sdk.dex
+            ${{ runner.temp }}/release/badges-sdk-compat.aar
 
       - name: Configure Git author
         run: |
@@ -129,9 +116,8 @@ jobs:
       - name: Commit release metadata
         env:
           VERSION: ${{ inputs.version }}
-          PLUGIN_PY: ${{ steps.plugin.outputs.file }}
         run: |
-          git add "$PLUGIN_PY" pyproject.toml
+          git add loader/badges_sdk.py pyproject.toml
           git diff --cached --quiet && {
             echo "No plugin metadata changes to commit" >&2
             exit 1
@@ -154,11 +140,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
-          PLUGIN_ID: ${{ steps.plugin.outputs.id }}
         run: |
           release_dir="$RUNNER_TEMP/release"
           gh release create "$VERSION" \
-            "$release_dir/${PLUGIN_ID}.plugin#${PLUGIN_ID}.plugin" \
-            "$release_dir/${PLUGIN_ID}-compat.aar#${PLUGIN_ID}-compat.aar" \
+            "$release_dir/badges-sdk-loader.py#badges-sdk-loader.py" \
+            "$release_dir/badges-sdk.dex#badges-sdk.dex" \
+            "$release_dir/badges-sdk-compat.aar#badges-sdk-compat.aar" \
             --title "$VERSION" \
             --notes ""

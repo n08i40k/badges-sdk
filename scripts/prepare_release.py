@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stamp the release version into the plugin source and pyproject.toml."""
+"""Проставляет релизную версию в исходник лоадера и pyproject.toml."""
 
 import argparse
 import re
@@ -16,15 +16,15 @@ def replace_one(text: str, pattern: str, replacement: str, description: str) -> 
     return updated
 
 
-def update_plugin_file(plugin_path: Path, version: str) -> None:
-    text = plugin_path.read_text()
+def update_loader_file(loader_path: Path, version: str) -> None:
+    text = loader_path.read_text()
     text = replace_one(
         text,
-        r'^__version__ = ".*"$',
-        f'__version__ = "{version}"',
-        "__version__",
+        r'^BADGES_SDK_VERSION = ".*"$',
+        f'BADGES_SDK_VERSION = "{version}"',
+        "BADGES_SDK_VERSION",
     )
-    plugin_path.write_text(text)
+    loader_path.write_text(text)
 
 
 def update_pyproject_file(pyproject_path: Path, version: str) -> None:
@@ -41,19 +41,19 @@ def update_pyproject_file(pyproject_path: Path, version: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
-    parser.add_argument("--plugin-file", required=True, type=Path)
+    parser.add_argument("--loader-file", required=True, type=Path)
     parser.add_argument("--pyproject-file", required=True, type=Path)
     args = parser.parse_args()
 
     if VERSION_RE.fullmatch(args.version) is None:
         raise SystemExit("Version must match x.x.x")
 
-    if not args.plugin_file.is_file():
-        raise SystemExit(f"Plugin file not found: {args.plugin_file}")
+    if not args.loader_file.is_file():
+        raise SystemExit(f"Loader file not found: {args.loader_file}")
     if not args.pyproject_file.is_file():
         raise SystemExit(f"pyproject file not found: {args.pyproject_file}")
 
-    update_plugin_file(args.plugin_file, args.version)
+    update_loader_file(args.loader_file, args.version)
     update_pyproject_file(args.pyproject_file, args.version)
 
     print(f"version={args.version}")

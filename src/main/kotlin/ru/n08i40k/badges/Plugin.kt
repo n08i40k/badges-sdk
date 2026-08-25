@@ -27,8 +27,6 @@ typealias LogReceiver = ValueCallback<String>
 class Plugin private constructor() {
     @Suppress("unused")
     companion object {
-        const val ID = "badges-sdk"
-
         // prefix of the keys under which consumers register their wake-up Runnable
         private const val WAITER_PROPS_KEY_PREFIX = "ru.n08i40k.badges.waiter."
 
@@ -44,10 +42,17 @@ class Plugin private constructor() {
 
         private var VERSION: String? = null
 
+        // id плагина, чей питоновский лоадер загрузил этот движок
+        @Volatile
+        private var LOADED_BY: String? = null
+
         internal fun getInstance(): Plugin = INSTANCE!!
 
         @JvmStatic
         fun getVersion(): String? = VERSION
+
+        @JvmStatic
+        fun getLoadedBy(): String? = LOADED_BY
 
         @JvmStatic
         fun getBuildDate(): String = Instant
@@ -59,13 +64,15 @@ class Plugin private constructor() {
         @JvmStatic
         fun inject(
             version: String,
+            loadedBy: String,
             logReceiver: LogReceiver,
         ) {
             VERSION = version
+            LOADED_BY = loadedBy
             Logger.setReceiver(logReceiver)
 
-            // release builds live in the host class-loader and are never ejected,
-            // so a plugin reload lands here with the instance still alive
+            // release builds never eject, so a plugin reload can land here with
+            // the instance of the previous load still alive
             if (INSTANCE != null) {
                 Logger.info("Plugin is already injected, reusing the existing instance")
                 return
@@ -112,12 +119,12 @@ class Plugin private constructor() {
         @Blocking
         @JvmStatic
         @Synchronized
-        fun eject() {
+        fun eject(): Boolean {
             if (!BuildConfig.DEBUG) {
-                // the release dex is grafted into the host class-loader: its classes
-                // stay loaded anyway, so tearing the plugin down buys nothing
+                // hooks installed by a release build are never rolled back: the
+                // loader keeps the engine alive until the client restarts
                 Logger.info("Eject is disabled in release builds")
-                return
+                return false
             }
 
             Logger.tryOrFatal("Failed to eject plugin") {
@@ -132,6 +139,9 @@ class Plugin private constructor() {
             }
 
             INSTANCE = null
+            LOADED_BY = null
+
+            return true
         }
     }
 

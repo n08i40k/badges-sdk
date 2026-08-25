@@ -4,8 +4,13 @@ COMPAT_RELEASE_AAR_PATH := `realpath -m compat/build/outputs/aar/compat-release.
 RELEASE_DEX_PATH := `realpath -m dist/dex/release/classes.dex`
 DEBUG_DEX_PATH := `realpath -m dist/dex/debug/classes.dex`
 
-PLUGIN_PY := `grep -ls '^__id__ = ' -- *.py | head -n1`
-DIST_PY := "dist/" + file_name(PLUGIN_PY)
+# the copy-paste loader consumers embed into their own plugin
+LOADER_PY := "loader/badges_sdk.py"
+DIST_DIR := "dist"
+DIST_LOADER := DIST_DIR + "/badges-sdk-loader.py"
+
+# dev-only plugin that loads the engine through that same loader
+DEV_PLUGIN_PY := "dev/badges-sdk-dev.py"
 
 # fail early if the tools a recipe needs are not installed
 [private]
@@ -27,28 +32,46 @@ _require +COMMANDS:
 dex: (_require "java")
     ./gradlew buildDexDebug
 
-# build the release DEX
-ci: (_require "java")
-    ./gradlew compat:build
-    ./gradlew buildDexRelease
-    cp {{ COMPAT_RELEASE_AAR_PATH }} ./compat.aar
-    cp {{ RELEASE_DEX_PATH }} ./classes.dex
-
 # build the consumer-side compat aar and copy it into a plugin that uses the SDK
 compat OUTPUT: (_require "java")
     ./gradlew compat:assembleRelease
     cp {{ COMPAT_RELEASE_AAR_PATH }} '{{ OUTPUT }}'
 
-# embed a DEX (default: release) into a distributable copy of the plugin .py
-embed DEX_PATH=RELEASE_DEX_PATH OUTPUT=DIST_PY: (_require "uv")
+# embed a DEX (default: release) into a distributable copy of the loader
+embed DEX_PATH=RELEASE_DEX_PATH OUTPUT=DIST_LOADER SOURCE=LOADER_PY: (_require "uv")
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p "$(dirname '{{ OUTPUT }}')"
-    uv run python tools/embed_dex.py '{{ DEX_PATH }}' '{{ PLUGIN_PY }}' '{{ OUTPUT }}'
+    uv run python tools/embed_dex.py '{{ DEX_PATH }}' '{{ SOURCE }}' '{{ OUTPUT }}'
 
-# watch the plugin source + debug DEX and live-reload on device via extera dev-sync
+# stamp the version, build the release DEX and compat AAR, assemble the release artifacts
+ci-release VERSION OUTPUT_DIR=DIST_DIR: (_require "java" "uv")
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+
+    cp '{{ LOADER_PY }}' "$tmp/{{ file_name(LOADER_PY) }}"
+    cp pyproject.toml "$tmp/pyproject.toml"
+
+    uv run python scripts/prepare_release.py \
+        --version '{{ VERSION }}' \
+        --loader-file "$tmp/{{ file_name(LOADER_PY) }}" \
+        --pyproject-file "$tmp/pyproject.toml"
+
+    ./gradlew buildDexRelease
+    ./gradlew compat:assembleRelease
+
+    mkdir -p '{{ OUTPUT_DIR }}'
+    just embed '{{ RELEASE_DEX_PATH }}' '{{ OUTPUT_DIR }}/badges-sdk-loader.py' "$tmp/{{ file_name(LOADER_PY) }}"
+    cp '{{ RELEASE_DEX_PATH }}' '{{ OUTPUT_DIR }}/badges-sdk.dex'
+    cp '{{ COMPAT_RELEASE_AAR_PATH }}' '{{ OUTPUT_DIR }}/badges-sdk-compat.aar'
+
+# watch the loader + dev plugin + debug DEX and live-reload on device via extera dev-sync
 watch *ARGS: (_require "uv" "adb")
-    uv run python tools/dev_watch.py '{{ PLUGIN_PY }}' '{{ DEBUG_DEX_PATH }}' {{ ARGS }}
+    uv run python tools/dev_watch.py '{{ DEV_PLUGIN_PY }}' '{{ DEBUG_DEX_PATH }}' \
+        --loader '{{ LOADER_PY }}' {{ ARGS }}
 
 # generate new Telegram[-compile].jar from updated extera/Ayu-Gram apk
 update-apk PATH_TO_APK: (_require "dex2jar" "jbang" "git")
@@ -102,11 +125,13 @@ init NEW_PACKAGE NEW_ID NEW_NAME: (_require "uv")
 
     # current values are read from the sources, so the recipe can be run repeatedly
     old_package=$(sed -n 's/^ *namespace = "\(.*\)"$/\1/p' build.gradle.kts)
-    old_py=$(grep -ls '^__id__ = ' -- *.py | head -n1)
-    old_id=$(sed -n 's/^__id__ = "\(.*\)"$/\1/p' "$old_py")
+    old_py='{{ DEV_PLUGIN_PY }}'
+    # the dev plugin is the only file carrying an __id__; the SDK id is that one
+    # without the -dev suffix
+    old_id=$(sed -n 's/^__id__ = "\(.*\)-dev"$/\1/p' "$old_py")
     old_name=$(sed -n 's/^rootProject.name = "\(.*\)"$/\1/p' settings.gradle.kts)
 
-    if [ -z "$old_package" ] || [ -z "$old_py" ] || [ -z "$old_id" ]; then
+    if [ -z "$old_package" ] || [ ! -f "$old_py" ] || [ -z "$old_id" ]; then
         echo "failed to detect current plugin package/id" >&2
         exit 1
     fi
@@ -131,7 +156,7 @@ init NEW_PACKAGE NEW_ID NEW_NAME: (_require "uv")
     fi
 
     # package references, both dotted (kotlin) and slashed (relocation/proguard config)
-    files=(build.gradle.kts proguard-rules.pro "$old_py")
+    files=(build.gradle.kts proguard-rules.pro "$old_py" '{{ LOADER_PY }}')
     while IFS= read -r -d '' file; do
         files+=("$file")
     done < <(find src -name '*.kt' -print0)
@@ -147,8 +172,10 @@ init NEW_PACKAGE NEW_ID NEW_NAME: (_require "uv")
     sed -i "s|^rootProject.name = \".*\"$|rootProject.name = \"${new_name}\"|" settings.gradle.kts
     sed -i "s|^name = \".*\"$|name = \"${new_id}\"|" pyproject.toml
 
-    if [ "$old_py" != "${new_id}.py" ]; then
-        mv "$old_py" "${new_id}.py"
+    new_py="$(dirname "$old_py")/${new_id}-dev.py"
+
+    if [ "$old_py" != "$new_py" ]; then
+        mv "$old_py" "$new_py"
     fi
 
     uv sync
