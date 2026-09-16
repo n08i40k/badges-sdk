@@ -56,7 +56,7 @@ class Plugin private constructor() {
 
         @JvmStatic
         fun getBuildDate(): String = Instant
-            .fromEpochMilliseconds(BuildConfig.BUILD_TIME.toLong())
+            .fromEpochMilliseconds(BuildConfig.BUILD_TIME)
             .toString()
 
         @Synchronized
