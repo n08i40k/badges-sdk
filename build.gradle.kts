@@ -11,7 +11,7 @@ private val targetSdkMinorProperty: Provider<Int> =
 
 plugins {
     alias(libs.plugins.android.library)
-    id("io.github.exterastuff.plugin") version "0.1.0"
+    alias(libs.plugins.exterastuff.plugin)
 }
 
 android {

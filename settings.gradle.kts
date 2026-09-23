@@ -1,6 +1,4 @@
 pluginManagement {
-    includeBuild("../gradle-plugin")
-
     repositories {
         google {
             content {
