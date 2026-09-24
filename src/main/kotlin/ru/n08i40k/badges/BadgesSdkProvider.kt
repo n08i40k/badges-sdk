@@ -1,6 +1,5 @@
 package ru.n08i40k.badges
 
-import android.webkit.ValueCallback
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import org.jetbrains.annotations.Blocking
@@ -19,8 +18,6 @@ import ru.n08i40k.badges.util.Logger
 import ru.n08i40k.badges.util.UserPatcher
 import java.lang.reflect.Member
 import kotlin.time.Instant
-
-public typealias LogReceiver = ValueCallback<String>
 
 public class BadgesSdkProvider private constructor() {
     public companion object {
