@@ -11,7 +11,7 @@ internal object UserPatcher {
         if (BadgesSdkProvider.DEBUG)
             return false
 
-        for (i in 0..<UserConfig.MAX_ACCOUNT_COUNT) {
+        for (i in 0..<MAX_ACCOUNT_COUNT) {
             val userConfig = UserConfig.getInstance(i)
 
             if (!userConfig.isClientActivated)
@@ -44,7 +44,7 @@ internal object UserPatcher {
     }
 
     fun patchAllUsers() {
-        for (accountId in 0..<UserConfig.MAX_ACCOUNT_COUNT) {
+        for (accountId in 0..<MAX_ACCOUNT_COUNT) {
             if (!UserConfig.getInstance(accountId).isClientActivated)
                 continue
 
@@ -66,7 +66,7 @@ internal object UserPatcher {
     }
 
     fun restoreAllUsers() {
-        for (accountId in 0..<UserConfig.MAX_ACCOUNT_COUNT) {
+        for (accountId in 0..<MAX_ACCOUNT_COUNT) {
             val config = UserConfig.getInstance(accountId)
 
             if (!config.isClientActivated)
