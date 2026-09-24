@@ -29,10 +29,19 @@ public class BadgesSdkProvider private constructor() {
         @Volatile
         private var WAS_INITIALIZED: Boolean = false
 
+        @Volatile
+        internal var DEBUG: Boolean = false
+
         @JvmStatic
         public fun getBuildDate(): String = Instant
             .fromEpochMilliseconds(BuildConfig.BUILD_TIME)
             .toString()
+
+        @Synchronized
+        @JvmStatic
+        public fun setDebug(debug: Boolean) {
+            DEBUG = debug
+        }
 
         @Synchronized
         @Blocking

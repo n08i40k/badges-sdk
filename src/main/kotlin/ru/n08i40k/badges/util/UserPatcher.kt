@@ -3,13 +3,31 @@ package ru.n08i40k.badges.util
 import org.telegram.messenger.MessagesController
 import org.telegram.messenger.UserConfig
 import org.telegram.tgnet.TLRPC
+import ru.n08i40k.badges.BadgesSdkProvider
 import java.util.concurrent.ConcurrentHashMap
 
 internal object UserPatcher {
+    private fun isLoggedIn(userId: Long): Boolean {
+        if (BadgesSdkProvider.DEBUG)
+            return false
+
+        for (i in 0..<UserConfig.MAX_ACCOUNT_COUNT) {
+            val userConfig = UserConfig.getInstance(i)
+
+            if (!userConfig.isClientActivated)
+                continue
+
+            if (userConfig.clientUserId == userId)
+                return true
+        }
+
+        return false
+    }
+
     private const val FLAG_PATCHED: Int = 1 shl 28
 
     private fun applyUserState(user: TLRPC.User): Boolean {
-        if (user.premium || user.flags2 and FLAG_PATCHED != 0)
+        if (user.premium || user.flags2 and FLAG_PATCHED != 0 || isLoggedIn(user.id))
             return false
 
         user.flags2 = user.flags2 or FLAG_PATCHED
