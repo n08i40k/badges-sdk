@@ -10,6 +10,7 @@ private val targetSdkMinorProperty: Provider<Int> =
     providers.gradleProperty("targetSdkMinor").map { it.toInt() }
 
 plugins {
+    id("maven-publish")
     alias(libs.plugins.android.library)
     alias(libs.plugins.exterastuff.plugin)
 }
@@ -67,6 +68,13 @@ android {
 
         isCoreLibraryDesugaringEnabled = true
     }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+    }
 }
 
 kotlin {
@@ -90,12 +98,28 @@ dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 }
 
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            groupId = "ru.n08i40k"
+            artifactId = "badges-sdk"
+            version = "1.2.0"
+
+            afterEvaluate {
+                from(components["release"])
+            }
+        }
+    }
+}
+
 extera {
     telegram {
         jar = file("libs/Telegram.jar")
 
         conflictingPackages = listOf("kotlin", "kotlinx")
     }
+
+    // not used as project will be published as AAR
 
     r8 {
         minSdk = minSdkMajorProperty.get()
@@ -107,6 +131,4 @@ extera {
 
         relocate("kotlin", "kotlinx")
     }
-
-    dexOutputDir = project.layout.projectDirectory.dir("dist/dex")
 }

@@ -1,4 +1,6 @@
 plugins {
+    id("maven-publish")
+
     alias(libs.plugins.android.library)
 }
 
@@ -37,6 +39,28 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+    }
+}
+
 dependencies {
     compileOnly(libs.jetbrains.annotations)
+}
+
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            groupId = "ru.n08i40k"
+            artifactId = "badges-sdk-api"
+            version = "1.2.0"
+
+            afterEvaluate {
+                from(components["release"])
+            }
+        }
+    }
 }
