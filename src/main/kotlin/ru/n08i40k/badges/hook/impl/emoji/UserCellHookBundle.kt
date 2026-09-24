@@ -10,9 +10,9 @@ import ru.n08i40k.badges.util.getAs
 import ru.n08i40k.badges.util.getAsUnchecked
 import ru.n08i40k.badges.util.getField
 
-class UserCellHookBundle : HookBundle() {
-    companion object Fields {
-        private val CLASS = UserCell::class.java
+internal class UserCellHookBundle : HookBundle() {
+    private companion object Fields {
+        val CLASS = UserCell::class.java
 
         val CURRENT_OBJECT = getField(CLASS, "currentObject")
         val NAME_TEXT_VIEW = getField(CLASS, "nameTextView")

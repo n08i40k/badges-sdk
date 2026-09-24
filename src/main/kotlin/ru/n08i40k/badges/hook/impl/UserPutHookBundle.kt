@@ -9,8 +9,8 @@ import ru.n08i40k.badges.util.UserPatcher
 import ru.n08i40k.badges.util.UserPatcher.isPatched
 import ru.n08i40k.badges.util.getField
 
-class UserPutHookBundle : HookBundle() {
-    companion object Fields {
+internal class UserPutHookBundle : HookBundle() {
+    private companion object Fields {
         val CURRENT_ACCOUNT = getField(BaseController::class.java, "currentAccount")
     }
 
@@ -35,7 +35,7 @@ class UserPutHookBundle : HookBundle() {
             val messagesController = param.thisObject as MessagesController
             val accountId = CURRENT_ACCOUNT.getInt(messagesController)
 
-            UserPatcher.patchUser(accountId, user)
+            UserPatcher.patchUserOnAccount(accountId, user)
         }
     }
 }

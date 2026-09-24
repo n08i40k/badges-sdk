@@ -11,9 +11,9 @@ import ru.n08i40k.badges.util.getAs
 import ru.n08i40k.badges.util.getAsUnchecked
 import ru.n08i40k.badges.util.getField
 
-class ChatAvatarContainerHookBundle : HookBundle() {
-    companion object Fields {
-        private val CLASS = ChatAvatarContainer::class.java
+internal class ChatAvatarContainerHookBundle : HookBundle() {
+    private companion object Fields {
+        val CLASS = ChatAvatarContainer::class.java
 
         val PARENT_FRAGMENT = getField(CLASS, "parentFragment")
         val TITLE_TEXT_VIEW = getField(CLASS, "titleTextView")

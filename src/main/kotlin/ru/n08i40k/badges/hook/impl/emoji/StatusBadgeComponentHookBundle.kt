@@ -8,9 +8,9 @@ import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
 import ru.n08i40k.badges.util.getField
 
-class StatusBadgeComponentHookBundle : HookBundle() {
-    companion object Fields {
-        private val CLASS = StatusBadgeComponent::class.java
+internal class StatusBadgeComponentHookBundle : HookBundle() {
+    private companion object Fields {
+        val CLASS = StatusBadgeComponent::class.java
 
         val STATUS_DRAWABLE = getField(CLASS, "statusDrawable")
     }

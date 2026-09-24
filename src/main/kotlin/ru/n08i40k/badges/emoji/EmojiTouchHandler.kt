@@ -10,7 +10,7 @@ import ru.n08i40k.badges.util.getField
 import java.lang.ref.WeakReference
 import java.util.concurrent.CopyOnWriteArrayList
 
-class EmojiTouchHandler private constructor(
+internal class EmojiTouchHandler private constructor(
     private val previous: View.OnTouchListener?,
 ) : View.OnTouchListener {
     companion object {

@@ -1,19 +1,15 @@
 package ru.n08i40k.badges.util
 
 import android.os.Looper
-import androidx.annotation.AnyThread
 import org.telegram.messenger.AndroidUtilities
 
-@AnyThread
-inline fun <R> runOnUIThread(crossinline block: () -> R) =
-    AndroidUtilities.runOnUIThread { Logger.tryOrFatal("run on ui thread") { block.invoke() } }
-
 // выполняет блок сразу, если мы уже на UI-потоке, иначе откладывает его
-@AnyThread
-inline fun <R> runOnUIThreadNow(crossinline block: () -> R) {
+internal inline fun <R> runOnUIThreadNow(crossinline block: () -> R) {
+    val threadBlock: () -> Unit = { Logger.tryOrFatal("run on ui thread") { block.invoke() } }
+
     if (Looper.myLooper() === Looper.getMainLooper())
-        Logger.tryOrFatal("run on ui thread") { block.invoke() }
+        threadBlock.invoke()
     else
-        runOnUIThread(block)
+        AndroidUtilities.runOnUIThread(threadBlock)
 }
 

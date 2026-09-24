@@ -10,9 +10,9 @@ import ru.n08i40k.badges.util.getAs
 import ru.n08i40k.badges.util.getField
 import java.lang.reflect.Field
 
-class ProfileActivityHookBundle : HookBundle() {
-    companion object Fields {
-        private val CLASS = ProfileActivity::class.java
+internal class ProfileActivityHookBundle : HookBundle() {
+    private companion object Fields {
+        val CLASS = ProfileActivity::class.java
 
         val USER_ID = getField(CLASS, "userId")
         val NAME_TEXT_VIEW = getField(CLASS, "nameTextView")

@@ -3,4 +3,4 @@ package ru.n08i40k.badges.hook
 import de.robv.android.xposed.XC_MethodHook
 import java.lang.reflect.Member
 
-typealias InstallHook = (method: Member, callback: (XC_MethodHook.MethodHookParam) -> Unit) -> Unit
+internal typealias InstallHook = (method: Member, callback: (XC_MethodHook.MethodHookParam) -> Unit) -> Unit

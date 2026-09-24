@@ -29,6 +29,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Badges SDK"
+rootProject.name = "badges-sdk"
 include(":api")
-include(":compat")

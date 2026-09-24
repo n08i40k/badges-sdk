@@ -15,9 +15,9 @@ import ru.n08i40k.badges.util.getAsUnchecked
 import ru.n08i40k.badges.util.getField
 import ru.n08i40k.badges.util.isClientVersionBelow
 
-class DialogCellHookBundle : HookBundle() {
-    companion object Fields {
-        private val CLASS = DialogCell::class.java
+internal class DialogCellHookBundle : HookBundle() {
+    private companion object Fields {
+        val CLASS = DialogCell::class.java
 
         val EMOJI_STATUS = getField(CLASS, "emojiStatus")
         val CURRENT_DIALOG_ID = getField(CLASS, "currentDialogId")

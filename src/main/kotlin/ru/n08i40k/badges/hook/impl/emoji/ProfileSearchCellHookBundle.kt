@@ -7,9 +7,9 @@ import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
 import ru.n08i40k.badges.util.getField
 
-class ProfileSearchCellHookBundle : HookBundle() {
-    companion object Fields {
-        private val CLASS = ProfileSearchCell::class.java
+internal class ProfileSearchCellHookBundle : HookBundle() {
+    private companion object Fields {
+        val CLASS = ProfileSearchCell::class.java
 
         val STATUS_DRAWABLE = getField(CLASS, "statusDrawable")
     }

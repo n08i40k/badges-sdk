@@ -14,7 +14,7 @@ import java.lang.reflect.Method
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 
-object EmojiRegistry {
+internal object EmojiRegistry {
     // DialogsActivity
     private val VIEW_PAGES = getField(DialogsActivity::class.java, "viewPages")
 
@@ -81,7 +81,7 @@ object EmojiRegistry {
         }
     }
 
-    // перепривязать views одной фабрики, опционально только для одного пользователя;
+    // Перевязать views одной фабрики, опционально только для одного пользователя;
     // возвращает true, если хотя бы у одного эмодзи изменилась ширина
     @UiThread
     fun rebindAll(factory: ViewFactory, userId: Long?): Boolean {
@@ -111,7 +111,7 @@ object EmojiRegistry {
         fun populateSet(layout: INavigationLayout) {
             val stack = layout.fragmentStack
 
-            for (i in 0..<stack.size) {
+            for (i in stack.indices) {
                 val fragment = stack[i] ?: continue
 
                 if (fragment is DialogsActivity)

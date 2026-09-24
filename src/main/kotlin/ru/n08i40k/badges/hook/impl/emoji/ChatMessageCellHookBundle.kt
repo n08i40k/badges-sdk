@@ -20,9 +20,9 @@ import ru.n08i40k.badges.util.getField
 import java.lang.ref.WeakReference
 import kotlin.math.ceil
 
-class ChatMessageCellHookBundle : HookBundle() {
-    companion object Fields {
-        private val CLASS = ChatMessageCell::class.java
+internal class ChatMessageCellHookBundle : HookBundle() {
+    private companion object Fields {
+        val CLASS = ChatMessageCell::class.java
 
         // ChatMessageCell
         val CURRENT_NAME_STATUS_DRAWABLE = getField(CLASS, "currentNameStatusDrawable")

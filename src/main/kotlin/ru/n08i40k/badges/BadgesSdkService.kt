@@ -1,48 +1,42 @@
 package ru.n08i40k.badges
 
+import ru.n08i40k.badges.BuildConfig.BUILD_VERSION
 import ru.n08i40k.badges.api.BadgesSdk
 import ru.n08i40k.badges.api.ViewFactory
 import ru.n08i40k.badges.emoji.EmojiRegistry
 import ru.n08i40k.badges.util.Logger
 import ru.n08i40k.badges.util.runOnUIThreadNow
 
-object BadgesSdkService : BadgesSdk {
-    data class EmojiFactory(
-        val pluginId: String,
-        val factory: ViewFactory
-    )
-
-    private val emojiFactories = ArrayList<EmojiFactory>(16)
+internal object BadgesSdkService : BadgesSdk {
+    private val emojiFactories = ArrayList<ViewFactory>(16)
 
     // неизменяемый снимок для чтения из drawable без блокировок
     @Volatile
-    private var snapshot: List<EmojiFactory> = emptyList()
+    private var snapshot: List<ViewFactory> = emptyList()
 
-    fun getFactories(): List<EmojiFactory> = snapshot
+    internal fun getFactories(): List<ViewFactory> = snapshot
 
-    override fun getVersion(): String = Plugin.getVersion()!!
+    override fun getVersion(): String = BUILD_VERSION
 
-    override fun addBadgeFactory(
-        pluginId: String,
-        factory: ViewFactory
-    ) {
+
+    override fun installViewFactory(viewFactory: ViewFactory) {
         synchronized(emojiFactories) {
-            if (emojiFactories.any { it.pluginId == pluginId && it.factory == factory })
+            if (emojiFactories.any { it == viewFactory })
                 throw IllegalArgumentException("Provided factory already exists")
 
-            emojiFactories.add(EmojiFactory(pluginId, factory))
+            emojiFactories.add(viewFactory)
             snapshot = emojiFactories.toList()
         }
 
-        Logger.info("Badge factory of $pluginId added")
+        Logger.info("View factory of ${viewFactory.pluginId} added")
 
         rebuildViews()
     }
 
-    override fun removeBadgeFactory(factory: ViewFactory) {
+    override fun uninstallViewFactory(viewFactory: ViewFactory) {
         val removed = synchronized(emojiFactories) {
             emojiFactories
-                .removeIf { it.factory == factory }
+                .removeIf { it == viewFactory }
                 .also { if (it) snapshot = emojiFactories.toList() }
         }
 
@@ -54,30 +48,10 @@ object BadgesSdkService : BadgesSdk {
         rebuildViews()
     }
 
-    override fun scheduleRebind(factory: ViewFactory) = rebind(factory, null)
-
-    override fun scheduleRebind(factory: ViewFactory, userId: Long) = rebind(factory, userId)
-
-    private fun rebind(factory: ViewFactory, userId: Long?) = runOnUIThreadNow {
-        // ширина бейджа могла измениться, тогда ячейки списка диалогов надо переизмерить
-        if (EmojiRegistry.rebindAll(factory, userId))
+    override fun rebindViews(params: BadgesSdk.RebindViewsParams) = runOnUIThreadNow {
+        // ширина бейджа могла измениться, тогда ячейки списка диалогов надо пере-измерить
+        if (EmojiRegistry.rebindAll(params.viewFactory, params.userId))
             EmojiRegistry.refreshDialogCells()
-    }
-
-    // надо выгрузить, если автор это не сделал вручную
-    fun onPluginUnload(id: String) {
-        val removed = synchronized(emojiFactories) {
-            emojiFactories
-                .removeIf { it.pluginId == id }
-                .also { if (it) snapshot = emojiFactories.toList() }
-        }
-
-        if (!removed)
-            return
-
-        Logger.info("Badge factories for plugin '$id' removed")
-
-        rebuildViews()
     }
 
     // фабрики живут ровно столько же, сколько и плагин
@@ -92,7 +66,7 @@ object BadgesSdkService : BadgesSdk {
     private fun rebuildViews() = runOnUIThreadNow {
         EmojiRegistry.rebuildAll()
 
-        // ширина эмодзи могла измениться, ячейки списка диалогов надо переизмерить
+        // ширина эмодзи могла измениться, ячейки списка диалогов надо пере-измерить
         EmojiRegistry.refreshDialogCells()
     }
 }

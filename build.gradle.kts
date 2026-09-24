@@ -14,6 +14,9 @@ plugins {
     alias(libs.plugins.exterastuff.plugin)
 }
 
+group = "ru.n08i40k"
+version = "1.2.0"
+
 android {
     namespace = "ru.n08i40k.badges"
 
@@ -33,15 +36,28 @@ android {
         lint {
             targetSdk = targetSdkMajorProperty.get()
         }
+
+        consumerProguardFiles("consumer-rules.pro")
     }
 
     buildTypes {
+        all {
+            buildConfigField("String", "BUILD_VERSION", "\"${project.version}\"")
+        }
+
         debug {
             buildConfigField("long", "BUILD_TIME", "0")
         }
 
         release {
             buildConfigField("long", "BUILD_TIME", "${System.currentTimeMillis()}")
+
+            isMinifyEnabled = true
+
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
@@ -54,6 +70,8 @@ android {
 }
 
 kotlin {
+    explicitApi()
+
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
         freeCompilerArgs.add("-Xmetadata-version=2.2.0")
@@ -66,12 +84,8 @@ dependencies {
     implementation(project(":api"))
 
     compileOnly(libs.aliuhook)
-
-    implementation(libs.jetbrains.kotlin.stdlib)
-    implementation(libs.kotlinx.coroutines.core)
-
-    compileOnly(libs.androidx.recyclerview)
-    compileOnly(libs.androidx.lifecycle.viewmodel)
+    compileOnly(libs.kotlinx.coroutines.core)
+    implementation(libs.androidx.annotation)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 }
@@ -80,18 +94,7 @@ extera {
     telegram {
         jar = file("libs/Telegram.jar")
 
-        conflictingPackages = listOf(
-            "kotlin",
-            "kotlinx",
-            "androidx.annotation",
-            "androidx.arch",
-            "androidx.collection",
-            "androidx.core",
-            "androidx.customview",
-            "androidx.lifecycle",
-            "androidx.recyclerview",
-            "androidx.versionedparcelable",
-        )
+        conflictingPackages = listOf("kotlin", "kotlinx")
     }
 
     r8 {

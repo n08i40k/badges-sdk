@@ -4,8 +4,8 @@ import org.telegram.tgnet.TLObject
 import org.telegram.tgnet.TLRPC
 import java.lang.reflect.Method
 
-object BadgesCompat {
-    data class ReflectionData(
+internal object BadgesCompat {
+    private data class ReflectionData(
         // BadgesController
         val badgesController: Any,
 

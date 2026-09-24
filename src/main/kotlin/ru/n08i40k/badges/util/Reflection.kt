@@ -3,7 +3,7 @@ package ru.n08i40k.badges.util
 import java.lang.reflect.Field
 import java.lang.reflect.Modifier
 
-fun getAccessibleFields(klass: Class<*>): Set<Field> {
+internal fun getAccessibleFields(klass: Class<*>): Set<Field> {
     val fields = hashSetOf<Field>()
 
     var c: Class<*>? = klass
@@ -21,30 +21,31 @@ fun getAccessibleFields(klass: Class<*>): Set<Field> {
 
     return fields
 }
-fun cloneFields(
+
+internal fun cloneFields(
     src: Any,
     dest: Any,
     // can be got by calling getAccessibleFields
     fields: Collection<Field>
 ) {
     for (field in fields) {
-       field.set(dest, field.get(src))
+        field.set(dest, field.get(src))
     }
 }
 
-fun getField(klass: Class<*>, name: String): Field {
+internal fun getField(klass: Class<*>, name: String): Field {
     val field = klass.getDeclaredField(name)
     field.isAccessible = true
 
     return field
 }
 
-inline fun <reified T> Field.getAs(obj: Any?): T? =
+internal inline fun <reified T> Field.getAs(obj: Any?): T? =
     this.get(obj) as? T
 
-inline fun <reified T> Field.getAsUnchecked(obj: Any?): T =
+internal inline fun <reified T> Field.getAsUnchecked(obj: Any?): T =
     this.get(obj) as T
 
-fun Field.addInt(obj: Any?, value: Int) =
+internal fun Field.addInt(obj: Any?, value: Int) =
     set(obj, getAs<Int>(obj)!! + value)
 

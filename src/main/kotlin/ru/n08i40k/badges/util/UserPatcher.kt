@@ -5,7 +5,7 @@ import org.telegram.messenger.UserConfig
 import org.telegram.tgnet.TLRPC
 import java.util.concurrent.ConcurrentHashMap
 
-object UserPatcher {
+internal object UserPatcher {
     private const val FLAG_PATCHED: Int = 1 shl 28
 
     private fun applyUserState(user: TLRPC.User): Boolean {
@@ -18,23 +18,23 @@ object UserPatcher {
         return true
     }
 
-    fun patchUser(accountId: Int, user: TLRPC.User) {
+    fun patchUserOnAccount(accountId: Int, user: TLRPC.User) {
         val messagesController = MessagesController.getInstance(accountId)
 
         if (applyUserState(user))
             messagesController.putUser(user, false, true)
     }
 
-    fun patchAllAccounts() {
+    fun patchAllUsers() {
         for (accountId in 0..<UserConfig.MAX_ACCOUNT_COUNT) {
             if (!UserConfig.getInstance(accountId).isClientActivated)
                 continue
 
-            patchUsers(accountId)
+            patchAllUsersOnAccount(accountId)
         }
     }
 
-    fun patchUsers(accountId: Int) {
+    fun patchAllUsersOnAccount(accountId: Int) {
         val messagesController = MessagesController.getInstance(accountId)
 
         @Suppress("UNCHECKED_CAST")
@@ -47,7 +47,7 @@ object UserPatcher {
         }
     }
 
-    fun cleanup() {
+    fun restoreAllUsers() {
         for (accountId in 0..<UserConfig.MAX_ACCOUNT_COUNT) {
             val config = UserConfig.getInstance(accountId)
 

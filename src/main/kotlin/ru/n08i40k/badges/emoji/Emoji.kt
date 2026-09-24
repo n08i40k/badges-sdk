@@ -27,7 +27,7 @@ import java.lang.reflect.Field
 import kotlin.math.max
 import kotlin.math.min
 
-class Emoji : SwapAnimatedEmojiDrawable {
+internal class Emoji : SwapAnimatedEmojiDrawable {
     // куда клиент кладёт бейдж без нашего вмешательства
     enum class BadgeSlot {
         // в отдельный view:
@@ -49,8 +49,7 @@ class Emoji : SwapAnimatedEmojiDrawable {
 
     // одна view, созданная фабрикой стороннего плагина
     class BadgeHolder internal constructor(
-        internal val pluginId: String,
-        internal val factory: ViewFactory,
+        internal val viewFactory: ViewFactory,
         internal val view: View,
     ) {
         // последнее, что вернул bind
@@ -208,7 +207,7 @@ class Emoji : SwapAnimatedEmojiDrawable {
 
     private val size: Int
 
-    // отступ между соседними доп. элементами
+    // Отступ между соседними доп. элементами
     private val gap: Int
 
     // views всех зарегистрированных фабрик, в порядке регистрации
@@ -255,7 +254,11 @@ class Emoji : SwapAnimatedEmojiDrawable {
 
         for (factory in BadgesSdkService.getFactories()) {
             val view = try {
-                factory.factory.create(parentView, size)
+                factory.create(object : ViewFactory.CreateParams {
+                    override fun getParent(): View = parentView
+
+                    override fun getHeightInPx(): Int = size
+                })
             } catch (e: Throwable) {
                 Logger.fatal(
                     "Failed to create badge view of ${factory.pluginId}",
@@ -265,7 +268,7 @@ class Emoji : SwapAnimatedEmojiDrawable {
                 continue
             }
 
-            holders.add(BadgeHolder(factory.pluginId, factory.factory, view))
+            holders.add(BadgeHolder(factory, view))
         }
     }
 
@@ -276,10 +279,10 @@ class Emoji : SwapAnimatedEmojiDrawable {
                 continue
 
             try {
-                holder.factory.destroy(holder.view)
+                holder.viewFactory.destroy(holder.view)
             } catch (e: Throwable) {
                 Logger.fatal(
-                    "Failed to destroy badge view of ${holder.pluginId}",
+                    "Failed to destroy badge view of ${holder.viewFactory.pluginId}",
                     e,
                     preventEject = true
                 )
@@ -317,10 +320,14 @@ class Emoji : SwapAnimatedEmojiDrawable {
             }
 
             holder.visible = try {
-                holder.factory.bind(holder.view, user.id)
+                holder.viewFactory.bind(object : ViewFactory.BindParams {
+                    override fun getView(): View = holder.view
+
+                    override fun getUserId(): Long = user.id
+                })
             } catch (e: Throwable) {
                 Logger.fatal(
-                    "Failed to bind badge view of ${holder.pluginId}",
+                    "Failed to bind badge view of ${holder.viewFactory.pluginId}",
                     e,
                     preventEject = true
                 )
@@ -375,9 +382,9 @@ class Emoji : SwapAnimatedEmojiDrawable {
             // премиума. Бейдж скрываем и рисуем сами, чтобы он оказался после наших,
             // а звезду - только если премиум выдан плагином: настоящий премиум её
             // заслужил. Когда бейджи клиента нечитаемы, слот не трогаем вообще.
-            hideOriginal = !hasStatus && BadgesCompat.isAvailable && (
-                    documentId != null || user.isPatched()
-                    )
+            hideOriginal = !hasStatus
+                    && BadgesCompat.isAvailable
+                    && (documentId != null || user.isPatched())
 
             setClientBadge(getBadgeDocumentId(user, documentId, hasStatus))
         }
@@ -423,14 +430,14 @@ class Emoji : SwapAnimatedEmojiDrawable {
 
     fun hasVisibleBadges(): Boolean = holders.any { it.visible }
 
-    // перепривязать views одной фабрики; возвращает true, если ширина изменилась
-    // и ячейку, в которой мы живём, надо переизмерить
+    // Пере-привязать views одной фабрики; возвращает true, если ширина изменилась
+    // и ячейку, в которой мы живём, надо пере-измерить
     @UiThread
     fun rebindFactory(factory: ViewFactory, userId: Long?): Boolean {
         if (userId != null && peerUserId != userId)
             return false
 
-        if (holders.none { it.factory == factory })
+        if (holders.none { it.viewFactory == factory })
             return false
 
         val previousWidth = extrasWidth
@@ -562,7 +569,7 @@ class Emoji : SwapAnimatedEmojiDrawable {
             holder.view.dispatchTouchEvent(copy)
         } catch (e: Throwable) {
             Logger.fatal(
-                "Failed to dispatch touch to badge view of ${holder.pluginId}",
+                "Failed to dispatch touch to badge view of ${holder.viewFactory.pluginId}",
                 e,
                 preventEject = true
             )
@@ -614,7 +621,7 @@ class Emoji : SwapAnimatedEmojiDrawable {
             holder.view.draw(canvas)
         } catch (e: Throwable) {
             Logger.fatal(
-                "Failed to draw badge view of ${holder.pluginId}",
+                "Failed to draw badge view of ${holder.viewFactory.pluginId}",
                 e,
                 preventEject = true
             )
