@@ -16,7 +16,7 @@ plugins {
 }
 
 group = "ru.n08i40k"
-version = "1.2.0"
+version = "1.2.1"
 
 android {
     namespace = "ru.n08i40k.badges"
@@ -103,7 +103,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "ru.n08i40k"
             artifactId = "badges-sdk"
-            version = "1.2.0"
+            version = "1.2.1"
 
             afterEvaluate {
                 from(components["release"])
