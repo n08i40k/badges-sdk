@@ -8,10 +8,10 @@ kotlinxCollectionsImmutable = "0.4.0"
 i18n4k = "0.11.2"
 recyclerview = "1.4.0"
 lifecycle = "2.6.2"
-agp = "9.4.0"
 junit = "4.13.2"
 junitVersion = "1.3.0"
 espressoCore = "3.7.0"
+agp = "9.4.1"
 exteraPlugin = "0.1.1"
 
 [libraries]
