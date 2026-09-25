@@ -381,9 +381,8 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
             // При пустом статусе в занятом нами слоте лежит бейдж клиента или звезда
             // премиума. Бейдж скрываем и рисуем сами, чтобы он оказался после наших,
             // а звезду - только если премиум выдан плагином: настоящий премиум её
-            // заслужил. Когда бейджи клиента нечитаемы, слот не трогаем вообще.
+            // заслужил (нет).
             hideOriginal = !hasStatus
-                    && BadgesCompat.isAvailable
                     && (documentId != null || user.isPatched())
 
             setClientBadge(getBadgeDocumentId(user, documentId, hasStatus))
@@ -447,7 +446,7 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
         return extrasWidth != previousWidth
     }
 
-    // -- геометрия --
+    // -- геометри деш --
 
     private fun measure(holder: BadgeHolder) {
         holder.view.measure(
