@@ -8,23 +8,16 @@ internal object Logger {
     private var suppressFatal = false
 
     fun info(message: String) {
-        try {
-            Log.i(BadgesSdkProvider.ID, message)
-        } catch (_: Throwable) {
-            BadgesSdkProvider.destroy()
-        }
+        Log.i(BadgesSdkProvider.ID, message)
     }
 
     fun fatal(message: String, exception: Throwable, preventEject: Boolean = false) {
-        try {
-            Log.e(BadgesSdkProvider.ID, message, exception)
-        } catch (e: Throwable) {
-            BadgesSdkProvider.destroy()
-            throw e
-        }
+        Log.e(BadgesSdkProvider.ID, message, exception)
 
-        if (!suppressFatal && !preventEject)
+        if (!suppressFatal && !preventEject) {
             BadgesSdkProvider.destroy()
+            BadgesSdkProvider.FATAL_EXCEPTION_HANDLER?.invoke(exception)
+        }
     }
 
     inline fun tryOrFatal(action: String, crossinline block: () -> Unit): Unit? =

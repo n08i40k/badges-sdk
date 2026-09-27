@@ -32,6 +32,9 @@ public class BadgesSdkProvider private constructor() {
         @Volatile
         internal var DEBUG: Boolean = false
 
+        @Volatile
+        internal var FATAL_EXCEPTION_HANDLER: ((Throwable) -> Unit)? = null
+
         @JvmStatic
         public fun getBuildDate(): String = Instant
             .fromEpochMilliseconds(BuildConfig.BUILD_TIME)
@@ -41,6 +44,12 @@ public class BadgesSdkProvider private constructor() {
         @JvmStatic
         public fun setDebug(debug: Boolean) {
             DEBUG = debug
+        }
+
+        @Synchronized
+        @JvmStatic
+        public fun setFatalExceptionHandler(handler: (Throwable) -> Unit) {
+            FATAL_EXCEPTION_HANDLER = handler
         }
 
         @Synchronized
@@ -66,8 +75,12 @@ public class BadgesSdkProvider private constructor() {
         @JvmStatic
         @Synchronized
         public fun destroy() {
-            val provider = INSTANCE?.let { INSTANCE = null; it } ?: return
-            Logger.tryOrFatal("Failed to eject plugin", provider::onDestroy)
+            val instance = INSTANCE ?: return
+            Logger.tryOrFatal("Failed to eject plugin", instance::onDestroy)
+
+            // clears refs
+            INSTANCE = null
+            FATAL_EXCEPTION_HANDLER = null
         }
     }
 
