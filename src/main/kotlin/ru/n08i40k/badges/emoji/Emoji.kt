@@ -16,6 +16,7 @@ import org.telegram.ui.Components.AnimatedEmojiDrawable.SwapAnimatedEmojiDrawabl
 import ru.n08i40k.badges.BadgesSdkService
 import ru.n08i40k.badges.api.ViewFactory
 import ru.n08i40k.badges.util.BadgesCompat
+import ru.n08i40k.badges.util.FrameCallbacks
 import ru.n08i40k.badges.util.Logger
 import ru.n08i40k.badges.util.`SimpleTextView$rightDrawable`
 import ru.n08i40k.badges.util.`SimpleTextView$rightDrawable2`
@@ -145,7 +146,7 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
 
                 EmojiRegistry.add(
                     EjectData(
-                        WeakReference(newDrawable),
+                        EmojiRegistry.reference(newDrawable),
                         WeakReference(obj),
                         fieldGetter,
                         fieldSetter,
@@ -184,7 +185,7 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
 
             EmojiRegistry.add(
                 EjectData(
-                    WeakReference(newDrawable),
+                    EmojiRegistry.reference(newDrawable),
                     WeakReference(obj),
                     fieldGetter,
                     fieldSetter,
@@ -340,7 +341,7 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
             return
 
         if (badgeDocumentId == null) {
-            clientBadge?.detach()
+            clientBadge?.let(::dropClientBadge)
             clientBadge = null
             clientBadgeDocumentId = null
             return
@@ -350,7 +351,7 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
             `SwapAnimatedEmojiDrawable$parentView`.invokeExact(this as SwapAnimatedEmojiDrawable) as? View
                 ?: return
 
-        clientBadge?.detach()
+        clientBadge?.let(::dropClientBadge)
         clientBadge = SwapAnimatedEmojiDrawable(parentView, size).apply {
             set(badgeDocumentId, false)
             setParticles(true, false)
@@ -358,6 +359,11 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
             attach()
         }
         clientBadgeDocumentId = badgeDocumentId
+    }
+
+    private fun dropClientBadge(badge: SwapAnimatedEmojiDrawable) {
+        badge.detach()
+        FrameCallbacks.unsubscribe(badge)
     }
 
     private fun refreshState() = runOnUIThreadNow {

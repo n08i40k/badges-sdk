@@ -213,6 +213,10 @@ internal val `SwapAnimatedEmojiDrawable$size` =
     getFieldGetter(SwapAnimatedEmojiDrawable::class.java, "size")
 
 @JvmField
+internal val `SwapAnimatedEmojiDrawable$invalidateRunnable` =
+    getFieldGetterIfExists(SwapAnimatedEmojiDrawable::class.java, "invalidateRunnable")
+
+@JvmField
 internal val `SimpleTextView$rightDrawable` =
     getFieldGetter(SimpleTextView::class.java, "rightDrawable")
 

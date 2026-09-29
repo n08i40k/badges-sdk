@@ -95,6 +95,8 @@ public class BadgesSdkProvider private constructor() {
             "hook methods",
             ::hookMethods
         )
+
+        EmojiRegistry.startHousekeeping()
     }
 
     @Blocking
@@ -108,6 +110,7 @@ public class BadgesSdkProvider private constructor() {
 
         hooks.clear()
 
+        EmojiRegistry.stopHousekeeping()
         EmojiRegistry.restoreAll()
         BadgesSdkService.clear()
 

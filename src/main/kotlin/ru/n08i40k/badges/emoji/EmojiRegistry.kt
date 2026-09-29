@@ -2,6 +2,7 @@ package ru.n08i40k.badges.emoji
 
 import android.view.View
 import androidx.annotation.UiThread
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.ActionBarLayout
 import org.telegram.ui.ActionBar.INavigationLayout
 import org.telegram.ui.DialogsActivity
@@ -11,18 +12,69 @@ import ru.n08i40k.badges.util.`DialogsActivity$viewPage`
 import ru.n08i40k.badges.util.`LaunchActivity$actionBarLayout`
 import ru.n08i40k.badges.util.`LaunchActivity$layersActionBarLayout`
 import ru.n08i40k.badges.util.`LaunchActivity$rightActionBarLayout`
+import ru.n08i40k.badges.util.FrameCallbacks
 import ru.n08i40k.badges.util.Logger
 import ru.n08i40k.badges.util.`MainTabsActivity$getDialogsActivity`
 import ru.n08i40k.badges.util.invokeAndCast
+import java.lang.ref.Reference
+import java.lang.ref.ReferenceQueue
+import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 
 internal object EmojiRegistry {
-    private val elements = ConcurrentHashMap.newKeySet<Emoji.EjectData>(128)
+    private const val HOUSEKEEPING_INTERVAL_MS = 5_000L
+
+    // GC кладёт сюда ссылки на собранные Emoji, по ним их EjectData уходят из elements
+    private val collected = ReferenceQueue<Emoji>()
+
+    private val elements = ConcurrentHashMap<Reference<out Emoji>, Emoji.EjectData>(128)
 
     private val touchHandlers = WeakHashMap<View, EmojiTouchHandler>()
 
-    fun add(data: Emoji.EjectData) = elements.add(data)
+    @Volatile
+    private var housekeepingActive = false
+
+    private val housekeeping = object : Runnable {
+        override fun run() {
+            if (!housekeepingActive)
+                return
+
+            try {
+                removeCollected()
+                FrameCallbacks.pruneCollected()
+            } catch (e: Throwable) {
+                Logger.fatal("Failed to run emoji housekeeping", e, preventEject = true)
+                housekeepingActive = false
+                return
+            }
+
+            AndroidUtilities.runOnUIThread(this, HOUSEKEEPING_INTERVAL_MS)
+        }
+    }
+
+    // ссылка на Emoji, которую нужно передать в EjectData.drawable
+    fun reference(emoji: Emoji): WeakReference<Emoji> = WeakReference(emoji, collected)
+
+    fun add(data: Emoji.EjectData) {
+        removeCollected()
+        elements[data.drawable] = data
+    }
+
+    private fun removeCollected() {
+        while (true)
+            elements.remove(collected.poll() ?: return)
+    }
+
+    fun startHousekeeping() {
+        housekeepingActive = true
+        AndroidUtilities.runOnUIThread(housekeeping, HOUSEKEEPING_INTERVAL_MS)
+    }
+
+    fun stopHousekeeping() {
+        housekeepingActive = false
+        AndroidUtilities.cancelRunOnUIThread(housekeeping)
+    }
 
     fun attachTouchHandler(view: View, drawable: Emoji) {
         val handler = synchronized(touchHandlers) {
@@ -34,7 +86,7 @@ internal object EmojiRegistry {
 
     @UiThread
     fun restoreAll() {
-        elements.forEach {
+        elements.values.forEach {
             Logger.tryOrFatal("restore original streak emoji") {
                 it.restore()
             }
@@ -56,13 +108,8 @@ internal object EmojiRegistry {
     // пересоздать кеш views у всех живых эмодзи (например, после изменения списка фабрик)
     @UiThread
     fun rebuildAll() {
-        val it = elements.iterator()
-
-        while (it.hasNext()) {
-            val emoji = it.next().drawable.get() ?: run {
-                it.remove()
-                continue
-            }
+        for (data in elements.values) {
+            val emoji = data.drawable.get() ?: continue
 
             Logger.tryOrFatal("rebuild badge views") {
                 emoji.rebuild()
@@ -76,13 +123,8 @@ internal object EmojiRegistry {
     fun rebindAll(factory: ViewFactory, userId: Long?): Boolean {
         var resized = false
 
-        val it = elements.iterator()
-
-        while (it.hasNext()) {
-            val emoji = it.next().drawable.get() ?: run {
-                it.remove()
-                continue
-            }
+        for (data in elements.values) {
+            val emoji = data.drawable.get() ?: continue
 
             Logger.tryOrFatal("rebind badge views") {
                 if (emoji.rebindFactory(factory, userId))
