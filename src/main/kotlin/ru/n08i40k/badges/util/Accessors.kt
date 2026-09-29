@@ -58,9 +58,10 @@ internal val `ChatMessageCell$viaWidth` =
 internal val `ChatMessageCell$viaWidth$$setter` =
     getFieldSetter(ChatMessageCell::class.java, "viaWidth")
 
+// pre 12.10.5
 @JvmField
 internal val `ChatMessageCell$viaNameWidth` =
-    getFieldGetter(ChatMessageCell::class.java, "viaNameWidth")
+    getFieldGetterIfExists(ChatMessageCell::class.java, "viaNameWidth")
 
 @JvmField
 internal val `ChatMessageCell$nameWidth` =
@@ -80,11 +81,25 @@ internal val `ChatMessageCell$nameLayout$$setter` =
 
 @JvmField
 internal val `ChatMessageCell$nameLayoutWidth` =
-    getFieldGetter(ChatMessageCell::class.java, "nameLayoutWidth")
+    getFieldGetterIfExists(ChatMessageCell::class.java, "nameLayoutWidth")
 
 @JvmField
 internal val `ChatMessageCell$nameLayoutWidth$$setter` =
-    getFieldSetter(ChatMessageCell::class.java, "nameLayoutWidth")
+    getFieldSetterIfExists(ChatMessageCell::class.java, "nameLayoutWidth")
+
+// 12.10.5 статус рисуется только при drawNameStatus
+@JvmField
+internal val `ChatMessageCell$drawNameStatus` =
+    getFieldGetterIfExists(ChatMessageCell::class.java, "drawNameStatus")
+
+@JvmField
+internal val `ChatMessageCell$drawNameStatus$$setter` =
+    getFieldSetterIfExists(ChatMessageCell::class.java, "drawNameStatus")
+
+@JvmField
+internal val `ChatMessageCell$viaSpan1` =
+    getFieldGetterIfExists(ChatMessageCell::class.java, "viaSpan1")
+        ?.retype(Any::class.java, ChatMessageCell::class.java)
 
 @JvmField
 internal val `DialogCell$FixedWidthSpan$width` =

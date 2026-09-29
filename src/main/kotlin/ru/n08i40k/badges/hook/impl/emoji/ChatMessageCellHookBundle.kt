@@ -15,6 +15,8 @@ import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
 import ru.n08i40k.badges.util.`ChatMessageCell$currentNameStatusDrawable`
 import ru.n08i40k.badges.util.`ChatMessageCell$currentNameStatusDrawable$$setter`
+import ru.n08i40k.badges.util.`ChatMessageCell$drawNameStatus`
+import ru.n08i40k.badges.util.`ChatMessageCell$drawNameStatus$$setter`
 import ru.n08i40k.badges.util.`ChatMessageCell$nameLayout`
 import ru.n08i40k.badges.util.`ChatMessageCell$nameLayout$$setter`
 import ru.n08i40k.badges.util.`ChatMessageCell$nameLayoutWidth`
@@ -22,6 +24,7 @@ import ru.n08i40k.badges.util.`ChatMessageCell$nameLayoutWidth$$setter`
 import ru.n08i40k.badges.util.`ChatMessageCell$nameWidth`
 import ru.n08i40k.badges.util.`ChatMessageCell$nameWidth$$setter`
 import ru.n08i40k.badges.util.`ChatMessageCell$viaNameWidth`
+import ru.n08i40k.badges.util.`ChatMessageCell$viaSpan1`
 import ru.n08i40k.badges.util.`ChatMessageCell$viaWidth$$setter`
 import ru.n08i40k.badges.util.`DialogCell$FixedWidthSpan$width`
 import ru.n08i40k.badges.util.`DialogCell$FixedWidthSpan$width$$setter`
@@ -87,7 +90,11 @@ internal class ChatMessageCellHookBundle : HookBundle() {
                 simpleTextView = null,
             ) ?: return@before
 
-            fitNameLayout(thisObject, emoji)
+            when {
+                `ChatMessageCell$nameLayoutWidth` != null -> fitLegacyNameLayout(thisObject, emoji)
+                `ChatMessageCell$drawNameStatus` != null -> fitNameLayout(thisObject, emoji)
+                else -> return@before
+            }
 
             thisObject.invalidate()
         }
@@ -117,24 +124,61 @@ internal class ChatMessageCellHookBundle : HookBundle() {
         }
     }
 
-    // Статус рисуется после имени или на месте FixedWidthSpan в строке "имя via @bot"
-    private fun fitNameLayout(cell: ChatMessageCell, emoji: Emoji) {
+    // Раскладка с nameLayoutWidth/viaNameWidth: статус рисуется всегда, после имени или на месте
+    // FixedWidthSpan в строке "имя via @bot"
+    private fun fitLegacyNameLayout(cell: ChatMessageCell, emoji: Emoji) {
         val extraPx = emoji.getAdditionalWidth()
 
-        if (`ChatMessageCell$viaNameWidth`.invokeExact(cell) as Int == 0) {
+        if (`ChatMessageCell$viaNameWidth`!!.invokeExact(cell) as Int == 0) {
             addNameWidth(cell, extraPx)
             return
         }
 
-        val nameLayoutWidth = `ChatMessageCell$nameLayoutWidth`.invokeExact(cell) as Int
+        val nameLayoutWidth = `ChatMessageCell$nameLayoutWidth`!!.invokeExact(cell) as Int
 
         val newLayout = widenNameStatusSpan(cell, extraPx, nameLayoutWidth + extraPx + dp(2f))
             ?: return
 
-        `ChatMessageCell$nameLayoutWidth$$setter`.invokeExact(
+        `ChatMessageCell$nameLayoutWidth$$setter`!!.invokeExact(
             cell,
             ceil(newLayout.getLineWidth(0)).toInt()
         )
+        `ChatMessageCell$viaWidth$$setter`.invokeExact(cell, extraPx)
+    }
+
+    // Раскладка с nameStatusOffsetX (AyuGram 12.10.5): статус рисуется только при drawNameStatus,
+    // смещение клиент считает при построении nameLayout
+    private fun fitNameLayout(cell: ChatMessageCell, emoji: Emoji) {
+        val extraPx = emoji.getAdditionalWidth()
+
+        val nameLayout = `ChatMessageCell$nameLayout`.invokeExact(cell) as? StaticLayout
+            ?: return
+
+        val text = nameLayout.text as? Spanned
+        val viaSpan = `ChatMessageCell$viaSpan1`?.invokeExact(cell)
+
+        // viaSpan1 не сбрасывается между сообщениями, поэтому проверяем, что он из текущего имени
+        val hasVia = text != null && viaSpan != null && text.getSpanStart(viaSpan) >= 0
+
+        if (!hasVia) {
+            if (`ChatMessageCell$drawNameStatus`!!.invokeExact(cell) as Boolean) {
+                addNameWidth(cell, extraPx)
+                return
+            }
+
+            if (!emoji.hasVisibleBadges())
+                return
+
+            // без статуса клиент не резервирует под него место (20dp) и не рисует drawable
+            `ChatMessageCell$drawNameStatus$$setter`!!.invokeExact(cell, true)
+            addNameWidth(cell, extraPx + dp(20f))
+            return
+        }
+
+        // nameStatusOffsetX указывает на начало FixedWidthSpan и после расширения не меняется
+        widenNameStatusSpan(cell, extraPx, nameLayout.width + extraPx)
+            ?: return
+
         `ChatMessageCell$viaWidth$$setter`.invokeExact(cell, extraPx)
     }
 
