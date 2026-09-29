@@ -25,7 +25,8 @@ internal class UserCellHookBundle : HookBundle() {
         ) { param ->
             val thisObject = param.thisObject as UserCell
 
-            val currentUser = `UserCell$currentObject`.invokeExact(thisObject) as? TLRPC.User
+            @Suppress("USELESS_CAST") // or WrongMethodTypeException
+            val currentUser = (`UserCell$currentObject`.invokeExact(thisObject) as Any?) as? TLRPC.User
                 ?: return@after
 
             val nameTextView = `UserCell$nameTextView`.invokeExact(thisObject) as SimpleTextView
