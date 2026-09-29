@@ -7,28 +7,17 @@ import org.telegram.ui.ActionBar.INavigationLayout
 import org.telegram.ui.DialogsActivity
 import org.telegram.ui.LaunchActivity
 import ru.n08i40k.badges.api.ViewFactory
+import ru.n08i40k.badges.util.`DialogsActivity$viewPage`
+import ru.n08i40k.badges.util.`LaunchActivity$actionBarLayout`
+import ru.n08i40k.badges.util.`LaunchActivity$layersActionBarLayout`
+import ru.n08i40k.badges.util.`LaunchActivity$rightActionBarLayout`
 import ru.n08i40k.badges.util.Logger
-import ru.n08i40k.badges.util.getAs
-import ru.n08i40k.badges.util.getField
-import java.lang.reflect.Method
+import ru.n08i40k.badges.util.`MainTabsActivity$getDialogsActivity`
+import ru.n08i40k.badges.util.invokeAndCast
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
 
 internal object EmojiRegistry {
-    // DialogsActivity
-    private val VIEW_PAGES = getField(DialogsActivity::class.java, "viewPages")
-
-    // LaunchActivity
-    private val ACTION_BAR_LAYOUT = getField(LaunchActivity::class.java, "actionBarLayout")
-    private val RIGHT_ACTION_BAR_LAYOUT = getField(LaunchActivity::class.java, "rightActionBarLayout")
-    private val LAYERS_ACTION_BAR_LAYOUT = getField(LaunchActivity::class.java, "layersActionBarLayout")
-
-    // org.telegram.ui.MainTabsActivity, отсутствует в части клиентов
-    val GET_DIALOGS_ACTIVITY: Method by lazy {
-        Class.forName("org.telegram.ui.MainTabsActivity")
-            .getDeclaredMethod("getDialogsActivity")
-    }
-
     private val elements = ConcurrentHashMap.newKeySet<Emoji.EjectData>(128)
 
     private val touchHandlers = WeakHashMap<View, EmojiTouchHandler>()
@@ -117,7 +106,9 @@ internal object EmojiRegistry {
                 if (fragment is DialogsActivity)
                     dialogsActivities.add(fragment)
                 else if (fragment.javaClass.name == "org.telegram.ui.MainTabsActivity") {
-                    (GET_DIALOGS_ACTIVITY.invoke(fragment) as? DialogsActivity)
+                    `MainTabsActivity$getDialogsActivity`
+                        .getOrNull()
+                        ?.invokeAndCast<DialogsActivity>(fragment)
                         ?.let(dialogsActivities::add)
                 }
             }
@@ -125,13 +116,18 @@ internal object EmojiRegistry {
 
         // Удивительно, что баг проявился только после обновления jar до версии 12.8.0
         // Как это вообще работало?
-        ACTION_BAR_LAYOUT.getAs<ActionBarLayout>(launchActivity)?.let(::populateSet)
-        RIGHT_ACTION_BAR_LAYOUT.getAs<ActionBarLayout>(launchActivity)?.let(::populateSet)
-        LAYERS_ACTION_BAR_LAYOUT.getAs<ActionBarLayout>(launchActivity)?.let(::populateSet)
+        (`LaunchActivity$actionBarLayout`.invokeExact(launchActivity) as ActionBarLayout?)
+            ?.let(::populateSet)
+
+        (`LaunchActivity$rightActionBarLayout`.invokeExact(launchActivity) as ActionBarLayout?)
+            ?.let(::populateSet)
+
+        (`LaunchActivity$layersActionBarLayout`.invokeExact(launchActivity) as ActionBarLayout?)
+            ?.let(::populateSet)
 
         @Suppress("UNCHECKED_CAST")
         val viewPages = dialogsActivities
-            .mapNotNull { VIEW_PAGES.getAs<Array<View?>>(it) }
+            .mapNotNull { `DialogsActivity$viewPage`.invokeExact(it) as Array<View?>? }
             .flatMap { it.toSet() }
 
         for (page in viewPages) {

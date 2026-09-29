@@ -4,9 +4,12 @@ import org.telegram.messenger.MessagesController
 import org.telegram.messenger.UserConfig
 import org.telegram.tgnet.TLRPC
 import ru.n08i40k.badges.BadgesSdkProvider
-import java.util.concurrent.ConcurrentHashMap
 
 internal object UserPatcher {
+    @Suppress("UNCHECKED_CAST")
+    private val MAX_ACCOUNT_COUNT =
+        (`UserConfig$Instance`.invokeExact() as Array<UserConfig>).size
+
     private fun isLoggedIn(userId: Long): Boolean {
         if (BadgesSdkProvider.DEBUG)
             return false
@@ -22,6 +25,16 @@ internal object UserPatcher {
         }
 
         return false
+    }
+
+    // на старых клиентах поле хранит desugared ConcurrentHashMap (j$.util.concurrent),
+    // поэтому тип карты не используется и values() вызывается рефлексией
+    @Suppress("UNCHECKED_CAST")
+    private fun getUsers(messagesController: MessagesController): Collection<TLRPC.User> {
+        val users = `MessagesController$users`.invokeExact(messagesController) as Any
+
+        return users.javaClass.getMethod("values")
+            .invoke(users) as Collection<TLRPC.User>
     }
 
     private const val FLAG_PATCHED: Int = 1 shl 28
@@ -55,11 +68,7 @@ internal object UserPatcher {
     fun patchAllUsersOnAccount(accountId: Int) {
         val messagesController = MessagesController.getInstance(accountId)
 
-        @Suppress("UNCHECKED_CAST")
-        val users = getField(messagesController.javaClass, "users")
-            .get(messagesController) as? ConcurrentHashMap<Long, TLRPC.User> ?: return
-
-        users.forEach { (_, user) ->
+        getUsers(messagesController).forEach { user ->
             if (applyUserState(user))
                 messagesController.putUser(user, false, true)
         }
@@ -74,11 +83,7 @@ internal object UserPatcher {
 
             val messagesController = MessagesController.getInstance(accountId)
 
-            @Suppress("UNCHECKED_CAST")
-            val users = getField(messagesController.javaClass, "users")
-                .get(messagesController) as? ConcurrentHashMap<Long, TLRPC.User> ?: continue
-
-            users.forEach { (_, user) ->
+            getUsers(messagesController).forEach { user ->
                 // премиум, который выдали не мы, снимать нельзя
                 if (!user.isPatched())
                     return@forEach

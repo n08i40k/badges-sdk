@@ -2,34 +2,32 @@ package ru.n08i40k.badges.hook.impl.emoji
 
 import android.graphics.drawable.Drawable
 import org.telegram.ui.ActionBar.SimpleTextView
+import org.telegram.ui.Components.AnimatedEmojiDrawable
 import org.telegram.ui.ProfileActivity
 import ru.n08i40k.badges.emoji.Emoji
 import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
-import ru.n08i40k.badges.util.getAs
-import ru.n08i40k.badges.util.getField
-import java.lang.reflect.Field
+import ru.n08i40k.badges.util.`ProfileActivity$badgeDrawable`
+import ru.n08i40k.badges.util.`ProfileActivity$badgeDrawable$$setter`
+import ru.n08i40k.badges.util.`ProfileActivity$emojiStatusDrawable`
+import ru.n08i40k.badges.util.`ProfileActivity$emojiStatusDrawable$$setter`
+import ru.n08i40k.badges.util.`ProfileActivity$nameTextView`
+import ru.n08i40k.badges.util.`ProfileActivity$userId`
+import java.lang.invoke.MethodHandle
 
 internal class ProfileActivityHookBundle : HookBundle() {
     private companion object Fields {
         val CLASS = ProfileActivity::class.java
 
-        val USER_ID = getField(CLASS, "userId")
-        val NAME_TEXT_VIEW = getField(CLASS, "nameTextView")
-        val EMOJI_STATUS_DRAWABLE = getField(CLASS, "emojiStatusDrawable")
-
-        // поле клиента, появилось в 12.5.1
-        val BADGE_DRAWABLE = try {
-            getField(CLASS, "badgeDrawable")
-        } catch (_: NoSuchFieldException) {
-            null
-        }
-
-        val HOST_FIELDS = listOfNotNull(EMOJI_STATUS_DRAWABLE, BADGE_DRAWABLE)
+        val HOST_FIELDS = listOfNotNull(
+            `ProfileActivity$emojiStatusDrawable` to `ProfileActivity$emojiStatusDrawable$$setter`,
+            `ProfileActivity$badgeDrawable` to `ProfileActivity$badgeDrawable$$setter`
+        )
     }
 
-    private fun getDrawable(fragment: ProfileActivity, field: Field): Drawable? =
-        (field.get(fragment) as Array<*>)[1] as Drawable?
+    @Suppress("UNCHECKED_CAST")
+    private fun getDrawable(fragment: Any, field: MethodHandle): Drawable? =
+        (field.invokeExact(fragment) as Array<AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable?>)[1]
 
     override fun inject(
         before: InstallHook,
@@ -44,34 +42,44 @@ internal class ProfileActivityHookBundle : HookBundle() {
         ) { param ->
             val thisObject = param.thisObject as ProfileActivity
 
-            val userId = USER_ID.getLong(thisObject)
+            val userId = `ProfileActivity$userId`.invokeExact(thisObject) as Long
 
             if (userId < 0)
                 return@after
 
-            val nameTextView = NAME_TEXT_VIEW
-                .getAs<Array<SimpleTextView?>>(thisObject)
+            @Suppress("UNCHECKED_CAST")
+            val nameTextView = (`ProfileActivity$nameTextView`
+                .invokeExact(thisObject) as? Array<SimpleTextView?>)
                 ?.get(1)
                 ?: return@after
 
             // при пустом статусе клиент отдаёт правому drawable бейдж, а не emojiStatusDrawable
-            val hostField = HOST_FIELDS.firstOrNull {
-                val drawable = getDrawable(thisObject, it)
+            val hostField = HOST_FIELDS
+                .firstOrNull { (getter, _) ->
+                    val drawable = getDrawable(thisObject, getter ?: return@firstOrNull false)
 
-                drawable != null
-                        && (drawable === nameTextView.rightDrawable
-                        || drawable === nameTextView.rightDrawable2)
-            } ?: return@after
+                    drawable != null
+                            && (drawable === nameTextView.rightDrawable
+                            || drawable === nameTextView.rightDrawable2)
+                }
+                ?.let { (getter, setter) -> getter!! to setter!! }
+                ?: return@after
 
-            val isSecondary = getDrawable(thisObject, hostField) === nameTextView.rightDrawable2
+
+            val isSecondary =
+                getDrawable(thisObject, hostField.first) === nameTextView.rightDrawable2
 
             HOST_FIELDS
                 .filter { it !== hostField }
-                .forEach { (getDrawable(thisObject, it) as? Emoji)?.setPeerUserId(0L) }
+                .forEach { (getter, _) ->
+                    val drawable = getDrawable(thisObject, getter ?: return@forEach) as? Emoji
+                    drawable?.setPeerUserId(0L)
+                }
 
             val emoji = Emoji.encapsulate(
                 thisObject,
-                hostField,
+                hostField.first,
+                hostField.second,
                 1,
                 userId,
                 badgeSlot = Emoji.BadgeSlot.SEPARATE,

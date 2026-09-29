@@ -5,15 +5,10 @@ import org.telegram.ui.Cells.ProfileSearchCell
 import ru.n08i40k.badges.emoji.Emoji
 import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
-import ru.n08i40k.badges.util.getField
+import ru.n08i40k.badges.util.`ProfileSearchCell$statusDrawable`
+import ru.n08i40k.badges.util.`ProfileSearchCell$statusDrawable$$setter`
 
 internal class ProfileSearchCellHookBundle : HookBundle() {
-    private companion object Fields {
-        val CLASS = ProfileSearchCell::class.java
-
-        val STATUS_DRAWABLE = getField(CLASS, "statusDrawable")
-    }
-
     override fun inject(
         before: InstallHook,
         after: InstallHook
@@ -32,7 +27,8 @@ internal class ProfileSearchCellHookBundle : HookBundle() {
 
             Emoji.encapsulate(
                 thisObject,
-                STATUS_DRAWABLE,
+                `ProfileSearchCell$statusDrawable`,
+                `ProfileSearchCell$statusDrawable$$setter`,
                 null,
                 user.id,
                 badgeSlot = Emoji.BadgeSlot.STATUS,

@@ -7,39 +7,30 @@ import android.text.TextPaint
 import org.telegram.messenger.AndroidUtilities.dp
 import org.telegram.messenger.MessageObject
 import org.telegram.tgnet.TLRPC
-import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Cells.DialogCell
+import org.telegram.ui.Components.AnimatedEmojiDrawable
 import ru.n08i40k.badges.emoji.Emoji
 import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
-import ru.n08i40k.badges.util.addInt
-import ru.n08i40k.badges.util.getAs
-import ru.n08i40k.badges.util.getAsUnchecked
-import ru.n08i40k.badges.util.getField
+import ru.n08i40k.badges.util.`ChatMessageCell$currentNameStatusDrawable`
+import ru.n08i40k.badges.util.`ChatMessageCell$currentNameStatusDrawable$$setter`
+import ru.n08i40k.badges.util.`ChatMessageCell$nameLayout`
+import ru.n08i40k.badges.util.`ChatMessageCell$nameLayout$$setter`
+import ru.n08i40k.badges.util.`ChatMessageCell$nameLayoutWidth`
+import ru.n08i40k.badges.util.`ChatMessageCell$nameLayoutWidth$$setter`
+import ru.n08i40k.badges.util.`ChatMessageCell$nameWidth`
+import ru.n08i40k.badges.util.`ChatMessageCell$nameWidth$$setter`
+import ru.n08i40k.badges.util.`ChatMessageCell$viaNameWidth`
+import ru.n08i40k.badges.util.`ChatMessageCell$viaWidth$$setter`
+import ru.n08i40k.badges.util.`DialogCell$FixedWidthSpan$width`
+import ru.n08i40k.badges.util.`DialogCell$FixedWidthSpan$width$$setter`
+import ru.n08i40k.badges.util.`Theme$chat_namePaint`
 import java.lang.ref.WeakReference
 import kotlin.math.ceil
 
 internal class ChatMessageCellHookBundle : HookBundle() {
-    private companion object Fields {
-        val CLASS = ChatMessageCell::class.java
-
-        // ChatMessageCell
-        val CURRENT_NAME_STATUS_DRAWABLE = getField(CLASS, "currentNameStatusDrawable")
-        val VIA_WIDTH = getField(CLASS, "viaWidth")
-        val VIA_NAME_WIDTH = getField(CLASS, "viaNameWidth")
-        val NAME_WIDTH = getField(CLASS, "nameWidth")
-        val NAME_LAYOUT = getField(CLASS, "nameLayout")
-        val NAME_LAYOUT_WIDTH = getField(CLASS, "nameLayoutWidth")
-
-        // FixedWidthSpan
-        val WIDTH = getField(DialogCell.FixedWidthSpan::class.java, "width")
-
-        // Theme
-        val CHAT_NAME_PAINT = getField(Theme::class.java, "chat_namePaint")
-    }
-
-    private var savedInitialisationData: Pair<Int, WeakReference<ChatMessageCell>>? = null
+    private var savedInitializationData: Pair<Int, WeakReference<ChatMessageCell>>? = null
 
     override fun inject(
         before: InstallHook,
@@ -58,7 +49,7 @@ internal class ChatMessageCellHookBundle : HookBundle() {
             if (messageObject.isOut || !messageObject.isFromUser)
                 return@before
 
-            savedInitialisationData = Pair(
+            savedInitializationData = Pair(
                 System.identityHashCode(messageObject),
                 WeakReference(param.thisObject as ChatMessageCell)
             )
@@ -69,13 +60,13 @@ internal class ChatMessageCellHookBundle : HookBundle() {
                 "isForwarded"
             )
         ) { param ->
-            val (savedId, savedCellRef) = savedInitialisationData ?: return@before
-            val messageObject = param.thisObject as? MessageObject ?: return@before
+            val (savedId, savedCellRef) = savedInitializationData ?: return@before
+            val messageObject = param.thisObject as MessageObject
 
             if (System.identityHashCode(messageObject) != savedId)
                 return@before
 
-            savedInitialisationData = null
+            savedInitializationData = null
 
             // here
             val peerUserId =
@@ -84,53 +75,19 @@ internal class ChatMessageCellHookBundle : HookBundle() {
                 else
                     return@before
 
-            val thisObject = savedCellRef.get()
-                ?: return@before
+            val thisObject = ChatMessageCell::class.java.cast(savedCellRef.get() ?: return@before)!!
 
             val emoji = Emoji.encapsulate(
                 thisObject,
-                CURRENT_NAME_STATUS_DRAWABLE,
+                `ChatMessageCell$currentNameStatusDrawable`,
+                `ChatMessageCell$currentNameStatusDrawable$$setter`,
                 null,
                 peerUserId,
                 badgeSlot = Emoji.BadgeSlot.STATUS_OR_NAME,
                 simpleTextView = null,
             ) ?: return@before
 
-            if (VIA_NAME_WIDTH.getInt(thisObject) == 0) {
-                NAME_WIDTH.addInt(thisObject, emoji.getAdditionalWidth())
-
-                thisObject.invalidate()
-                return@before
-            }
-
-            val nameLayout = NAME_LAYOUT.getAs<StaticLayout>(thisObject)
-                ?: return@before
-
-            val spannedText = nameLayout.text as? Spanned ?: return@before
-            val extraPx = emoji.getAdditionalWidth()
-
-            spannedText.getSpans(0, spannedText.length, DialogCell.FixedWidthSpan::class.java)
-                .lastOrNull()
-                ?.let { WIDTH.addInt(it, extraPx) }
-                ?: return@before
-
-            val nameLayoutWidth = NAME_LAYOUT_WIDTH.getInt(thisObject)
-
-            val newLayout = StaticLayout(
-                spannedText,
-                CHAT_NAME_PAINT.getAsUnchecked<TextPaint>(null),
-                nameLayoutWidth + extraPx + dp(2f),
-                Layout.Alignment.ALIGN_NORMAL,
-                1.0f,
-                0.0f,
-                false
-            )
-
-            val newNameLayoutWidth = ceil(newLayout.getLineWidth(0)).toInt()
-
-            NAME_LAYOUT.set(thisObject, newLayout)
-            NAME_LAYOUT_WIDTH.set(thisObject, newNameLayoutWidth)
-            VIA_WIDTH.set(thisObject, extraPx)
+            fitNameLayout(thisObject, emoji)
 
             thisObject.invalidate()
         }
@@ -146,16 +103,76 @@ internal class ChatMessageCellHookBundle : HookBundle() {
                     String::class.java,
                 )
         ) { param ->
-            val cell = param.args[0] as? ChatMessageCell
+            val cell: Any = param.args[0] as? ChatMessageCell
                 ?: return@before
 
-            val emoji = CURRENT_NAME_STATUS_DRAWABLE.getAs<Emoji>(cell)
-                ?: return@before
+            val emoji =
+                `ChatMessageCell$currentNameStatusDrawable`.invokeExact(cell) as AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable? as? Emoji?
+                    ?: return@before
 
             if (!emoji.hasVisibleBadges())
                 return@before
 
             param.args[3] = ""
         }
+    }
+
+    // Статус рисуется после имени или на месте FixedWidthSpan в строке "имя via @bot"
+    private fun fitNameLayout(cell: ChatMessageCell, emoji: Emoji) {
+        val extraPx = emoji.getAdditionalWidth()
+
+        if (`ChatMessageCell$viaNameWidth`.invokeExact(cell) as Int == 0) {
+            addNameWidth(cell, extraPx)
+            return
+        }
+
+        val nameLayoutWidth = `ChatMessageCell$nameLayoutWidth`.invokeExact(cell) as Int
+
+        val newLayout = widenNameStatusSpan(cell, extraPx, nameLayoutWidth + extraPx + dp(2f))
+            ?: return
+
+        `ChatMessageCell$nameLayoutWidth$$setter`.invokeExact(
+            cell,
+            ceil(newLayout.getLineWidth(0)).toInt()
+        )
+        `ChatMessageCell$viaWidth$$setter`.invokeExact(cell, extraPx)
+    }
+
+    private fun addNameWidth(cell: ChatMessageCell, extraPx: Int) {
+        val nameWidth = `ChatMessageCell$nameWidth`.invokeExact(cell) as Int
+        `ChatMessageCell$nameWidth$$setter`.invokeExact(cell, nameWidth + extraPx)
+    }
+
+    // В строке "имя via @bot" место под статус - FixedWidthSpan после имени
+    private fun widenNameStatusSpan(
+        cell: ChatMessageCell,
+        extraPx: Int,
+        layoutWidth: Int,
+    ): StaticLayout? {
+        val nameLayout = `ChatMessageCell$nameLayout`.invokeExact(cell) as? StaticLayout
+            ?: return null
+
+        val text = nameLayout.text as? Spanned ?: return null
+
+        val span = text.getSpans(0, text.length, DialogCell.FixedWidthSpan::class.java)
+            .lastOrNull()
+            ?: return null
+
+        val width = `DialogCell$FixedWidthSpan$width`.invokeExact(span) as Int
+        `DialogCell$FixedWidthSpan$width$$setter`.invokeExact(span, width + extraPx)
+
+        val newLayout = StaticLayout(
+            text,
+            `Theme$chat_namePaint`.invokeExact() as TextPaint,
+            layoutWidth,
+            Layout.Alignment.ALIGN_NORMAL,
+            1.0f,
+            0.0f,
+            false
+        )
+
+        `ChatMessageCell$nameLayout$$setter`.invokeExact(cell, newLayout)
+
+        return newLayout
     }
 }

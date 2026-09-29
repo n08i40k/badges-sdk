@@ -6,19 +6,12 @@ import org.telegram.ui.Cells.UserCell
 import ru.n08i40k.badges.emoji.Emoji
 import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
-import ru.n08i40k.badges.util.getAs
-import ru.n08i40k.badges.util.getAsUnchecked
-import ru.n08i40k.badges.util.getField
+import ru.n08i40k.badges.util.`UserCell$currentObject`
+import ru.n08i40k.badges.util.`UserCell$emojiStatus`
+import ru.n08i40k.badges.util.`UserCell$emojiStatus$$setter`
+import ru.n08i40k.badges.util.`UserCell$nameTextView`
 
 internal class UserCellHookBundle : HookBundle() {
-    private companion object Fields {
-        val CLASS = UserCell::class.java
-
-        val CURRENT_OBJECT = getField(CLASS, "currentObject")
-        val NAME_TEXT_VIEW = getField(CLASS, "nameTextView")
-        val EMOJI_STATUS = getField(CLASS, "emojiStatus")
-    }
-
     override fun inject(
         before: InstallHook,
         after: InstallHook
@@ -32,14 +25,15 @@ internal class UserCellHookBundle : HookBundle() {
         ) { param ->
             val thisObject = param.thisObject as UserCell
 
-            val currentUser = CURRENT_OBJECT.getAs<TLRPC.User>(thisObject)
+            val currentUser = `UserCell$currentObject`.invokeExact(thisObject) as? TLRPC.User
                 ?: return@after
 
-            val nameTextView = NAME_TEXT_VIEW.getAsUnchecked<SimpleTextView>(thisObject)
+            val nameTextView = `UserCell$nameTextView`.invokeExact(thisObject) as SimpleTextView
 
             val emoji = Emoji.encapsulate(
                 thisObject,
-                EMOJI_STATUS,
+                `UserCell$emojiStatus`,
+                `UserCell$emojiStatus$$setter`,
                 null,
                 currentUser.id,
                 badgeSlot = Emoji.BadgeSlot.SEPARATE,

@@ -5,15 +5,11 @@ import org.telegram.messenger.MessagesController
 import org.telegram.tgnet.TLRPC
 import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
+import ru.n08i40k.badges.util.`BaseController$currentAccount`
 import ru.n08i40k.badges.util.UserPatcher
 import ru.n08i40k.badges.util.UserPatcher.isPatched
-import ru.n08i40k.badges.util.getField
 
 internal class UserPutHookBundle : HookBundle() {
-    private companion object Fields {
-        val CURRENT_ACCOUNT = getField(BaseController::class.java, "currentAccount")
-    }
-
     override fun inject(
         before: InstallHook,
         after: InstallHook
@@ -32,8 +28,8 @@ internal class UserPutHookBundle : HookBundle() {
             if (user.isPatched())
                 return@before
 
-            val messagesController = param.thisObject as MessagesController
-            val accountId = CURRENT_ACCOUNT.getInt(messagesController)
+            val messagesController = param.thisObject as BaseController
+            val accountId = `BaseController$currentAccount`.invokeExact(messagesController) as Int
 
             UserPatcher.patchUserOnAccount(accountId, user)
         }

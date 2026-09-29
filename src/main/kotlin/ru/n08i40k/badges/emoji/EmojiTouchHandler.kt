@@ -5,8 +5,9 @@ import android.view.MotionEvent
 import android.view.View
 import org.telegram.ui.ActionBar.SimpleTextView
 import ru.n08i40k.badges.util.Logger
-import ru.n08i40k.badges.util.getAs
-import ru.n08i40k.badges.util.getField
+import ru.n08i40k.badges.util.`SimpleTextView$rightDrawableOnClickListener`
+import ru.n08i40k.badges.util.`View$ListenerInfo$mOnTouchListener`
+import ru.n08i40k.badges.util.`View$mListenerInfo`
 import java.lang.ref.WeakReference
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -14,40 +15,29 @@ internal class EmojiTouchHandler private constructor(
     private val previous: View.OnTouchListener?,
 ) : View.OnTouchListener {
     companion object {
-        // SimpleTextView
-        private val RIGHT_DRAWABLE_ON_CLICK_LISTENER =
-            getField(SimpleTextView::class.java, "rightDrawableOnClickListener")
-
-        @SuppressLint("DiscouragedPrivateApi", "PrivateApi")
-        private val PREVIOUS_LISTENER: (View) -> View.OnTouchListener? = run {
-            val listenerInfo = try {
-                View::class.java.getDeclaredField("mListenerInfo")
-                    .apply { isAccessible = true }
-            } catch (_: Throwable) {
-                Logger.info("View.mListenerInfo is inaccessible")
-                return@run { null }
-            }
-
-            val onTouchListener = try {
-                Class.forName($$"android.view.View$ListenerInfo")
-                    .getDeclaredField("mOnTouchListener")
-                    .apply { isAccessible = true }
-            } catch (_: Throwable) {
-                Logger.info("ListenerInfo.mOnTouchListener is inaccessible")
-                return@run { null }
-            }
-
-            return@run { view ->
-                try {
-                    listenerInfo.get(view)?.let(onTouchListener::get) as? View.OnTouchListener
-                } catch (_: Throwable) {
-                    null
+        private fun getPreviousListener(view: View): View.OnTouchListener? = run {
+            val mListenerInfo = `View$mListenerInfo`
+                .getOrNull()
+                ?: run {
+                    Logger.info("View.mListenerInfo is inaccessible")
+                    return null
                 }
-            }
+
+            val mOnTouchListener = `View$ListenerInfo$mOnTouchListener`
+                .getOrNull()
+                ?: run {
+                    Logger.info("ListenerInfo.mOnTouchListener is inaccessible")
+                    return null
+                }
+
+            val listenerInfo = mListenerInfo.invokeExact(view)
+                ?: return null
+
+            return mOnTouchListener.invokeExact(listenerInfo) as View.OnTouchListener?
         }
 
         fun install(view: View): EmojiTouchHandler {
-            val previous = PREVIOUS_LISTENER(view)
+            val previous = getPreviousListener(view)
 
             if (previous is EmojiTouchHandler)
                 return previous
@@ -99,7 +89,7 @@ internal class EmojiTouchHandler private constructor(
         if (view !is SimpleTextView)
             return null
 
-        return RIGHT_DRAWABLE_ON_CLICK_LISTENER.getAs<View.OnClickListener>(view)
+        return `SimpleTextView$rightDrawableOnClickListener`.invokeExact(view) as? View.OnClickListener
     }
 
     private fun reset() {

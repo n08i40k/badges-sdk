@@ -7,19 +7,12 @@ import org.telegram.ui.Components.ChatAvatarContainer
 import ru.n08i40k.badges.emoji.Emoji
 import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
-import ru.n08i40k.badges.util.getAs
-import ru.n08i40k.badges.util.getAsUnchecked
-import ru.n08i40k.badges.util.getField
+import ru.n08i40k.badges.util.`ChatAvatarContainer$emojiStatusDrawable`
+import ru.n08i40k.badges.util.`ChatAvatarContainer$emojiStatusDrawable$$setter`
+import ru.n08i40k.badges.util.`ChatAvatarContainer$parentFragment`
+import ru.n08i40k.badges.util.`ChatAvatarContainer$titleTextView`
 
 internal class ChatAvatarContainerHookBundle : HookBundle() {
-    private companion object Fields {
-        val CLASS = ChatAvatarContainer::class.java
-
-        val PARENT_FRAGMENT = getField(CLASS, "parentFragment")
-        val TITLE_TEXT_VIEW = getField(CLASS, "titleTextView")
-        val EMOJI_STATUS_DRAWABLE = getField(CLASS, "emojiStatusDrawable")
-    }
-
     override fun inject(
         before: InstallHook,
         after: InstallHook
@@ -31,18 +24,24 @@ internal class ChatAvatarContainerHookBundle : HookBundle() {
                 .filter { it.name == "setTitle" }
                 .maxByOrNull { it.parameterCount }!!
         ) { param ->
-            val thisObject = param.thisObject
+            val thisObject = param.thisObject as ChatAvatarContainer
 
-            val dialogId = PARENT_FRAGMENT.getAs<ChatActivity>(thisObject)
-                ?.dialogId
-                ?.takeIf { it >= 0 }
-                ?: return@after
+            val parentFragment =
+                `ChatAvatarContainer$parentFragment`.invokeExact(thisObject) as? ChatActivity
+                    ?: return@after
 
-            val titleTextView = TITLE_TEXT_VIEW.getAsUnchecked<SimpleTextView>(thisObject)
+            val dialogId = parentFragment.dialogId
+
+            if (dialogId < 0)
+                return@after
+
+            val titleTextView =
+                `ChatAvatarContainer$titleTextView`.invokeExact(thisObject) as SimpleTextView
 
             val newDrawable = Emoji.encapsulate(
                 thisObject,
-                EMOJI_STATUS_DRAWABLE,
+                `ChatAvatarContainer$emojiStatusDrawable`,
+                `ChatAvatarContainer$emojiStatusDrawable$$setter`,
                 null,
                 dialogId,
                 badgeSlot = Emoji.BadgeSlot.SEPARATE,

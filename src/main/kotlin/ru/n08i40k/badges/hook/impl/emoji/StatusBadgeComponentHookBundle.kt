@@ -6,15 +6,10 @@ import org.telegram.ui.Components.StatusBadgeComponent
 import ru.n08i40k.badges.emoji.Emoji
 import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
-import ru.n08i40k.badges.util.getField
+import ru.n08i40k.badges.util.`StatusBadgeComponent$statusDrawable`
+import ru.n08i40k.badges.util.`StatusBadgeComponent$statusDrawable$$setter`
 
 internal class StatusBadgeComponentHookBundle : HookBundle() {
-    private companion object Fields {
-        val CLASS = StatusBadgeComponent::class.java
-
-        val STATUS_DRAWABLE = getField(CLASS, "statusDrawable")
-    }
-
     override fun inject(
         before: InstallHook,
         after: InstallHook
@@ -30,7 +25,8 @@ internal class StatusBadgeComponentHookBundle : HookBundle() {
 
             Emoji.encapsulate(
                 thisObject,
-                STATUS_DRAWABLE,
+                `StatusBadgeComponent$statusDrawable`,
+                `StatusBadgeComponent$statusDrawable$$setter`,
                 null,
                 0,
                 badgeSlot = Emoji.BadgeSlot.STATUS,
@@ -55,7 +51,8 @@ internal class StatusBadgeComponentHookBundle : HookBundle() {
             // update user id
             Emoji.encapsulate(
                 thisObject,
-                STATUS_DRAWABLE,
+                `StatusBadgeComponent$statusDrawable`,
+                `StatusBadgeComponent$statusDrawable$$setter`,
                 null,
                 user.id,
                 badgeSlot = Emoji.BadgeSlot.STATUS,

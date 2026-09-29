@@ -11,6 +11,10 @@ internal object Logger {
         Log.i(BadgesSdkProvider.ID, message)
     }
 
+    fun warn(message: String) {
+        Log.w(BadgesSdkProvider.ID, message)
+    }
+
     fun fatal(message: String, exception: Throwable, preventEject: Boolean = false) {
         Log.e(BadgesSdkProvider.ID, message, exception)
 

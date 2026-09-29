@@ -1,6 +1,7 @@
 package ru.n08i40k.badges.emoji
 
 import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.view.MotionEvent
 import android.view.View
 import androidx.annotation.UiThread
@@ -16,14 +17,16 @@ import ru.n08i40k.badges.BadgesSdkService
 import ru.n08i40k.badges.api.ViewFactory
 import ru.n08i40k.badges.util.BadgesCompat
 import ru.n08i40k.badges.util.Logger
+import ru.n08i40k.badges.util.`SimpleTextView$rightDrawable`
+import ru.n08i40k.badges.util.`SimpleTextView$rightDrawable2`
+import ru.n08i40k.badges.util.`SwapAnimatedEmojiDrawable$$fields`
+import ru.n08i40k.badges.util.`SwapAnimatedEmojiDrawable$parentView`
+import ru.n08i40k.badges.util.`SwapAnimatedEmojiDrawable$size`
 import ru.n08i40k.badges.util.UserPatcher.isPatched
 import ru.n08i40k.badges.util.cloneFields
-import ru.n08i40k.badges.util.getAccessibleFields
-import ru.n08i40k.badges.util.getAs
-import ru.n08i40k.badges.util.getField
 import ru.n08i40k.badges.util.runOnUIThreadNow
+import java.lang.invoke.MethodHandle
 import java.lang.ref.WeakReference
-import java.lang.reflect.Field
 import kotlin.math.max
 import kotlin.math.min
 
@@ -77,7 +80,8 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
     data class EjectData(
         val drawable: WeakReference<Emoji>,
         val targetObject: WeakReference<Any>,
-        val targetField: Field,
+        val targetFieldGetter: MethodHandle,
+        val targetFieldSetter: MethodHandle,
         val arrayIndex: Int?,
         val nameTextView: WeakReference<SimpleTextView>? = null,
     ) {
@@ -89,50 +93,42 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
 
             val pseudoOriginal = SwapAnimatedEmojiDrawable(null, 0)
 
-            cloneFields(drawable, pseudoOriginal, EMOJI_FIELDS)
+            cloneFields(drawable, pseudoOriginal, `SwapAnimatedEmojiDrawable$$fields`)
 
             if (arrayIndex == null) {
-                targetField.set(targetObject, pseudoOriginal)
+                targetFieldSetter.invokeExact(targetObject, pseudoOriginal)
+
                 nameTextView?.get()?.let { textView ->
-                    if (RIGHT_DRAWABLE.get(textView) === drawable)
+                    if (`SimpleTextView$rightDrawable`.invokeExact(textView) as Drawable? === drawable)
                         textView.rightDrawable = pseudoOriginal
 
-                    if (RIGHT_DRAWABLE_2.get(textView) === drawable)
+                    if (`SimpleTextView$rightDrawable2`.invokeExact(textView) as Drawable? === drawable)
                         textView.rightDrawable2 = pseudoOriginal
                 }
                 return
             }
 
             @Suppress("UNCHECKED_CAST")
-            val array = targetField.get(targetObject)!! as Array<SwapAnimatedEmojiDrawable>
+            val array =
+                targetFieldGetter.invokeExact(targetObject) as Array<SwapAnimatedEmojiDrawable>
 
             array[arrayIndex] = pseudoOriginal
         }
     }
 
-    companion object Reflection {
-        private val CLASS = SwapAnimatedEmojiDrawable::class.java
-
-        val PARENT_VIEW = getField(CLASS, "parentView")
-        val SIZE = getField(CLASS, "size")
-
-        // SimpleTextView
-        val RIGHT_DRAWABLE = getField(SimpleTextView::class.java, "rightDrawable")
-        val RIGHT_DRAWABLE_2 = getField(SimpleTextView::class.java, "rightDrawable2")
-
-        val EMOJI_FIELDS = getAccessibleFields(SwapAnimatedEmojiDrawable::class.java)
-
+    companion object {
         fun encapsulate(
             obj: Any,
-            field: Field,
+            fieldGetter: MethodHandle,
+            fieldSetter: MethodHandle,
             arrayIndex: Int?,
             peerUserId: Long,
             badgeSlot: BadgeSlot,
             simpleTextView: SimpleTextView? = null,
         ): Emoji? {
             if (arrayIndex == null) {
-                val drawable = (field.get(obj) ?: return null) as? SwapAnimatedEmojiDrawable
-                    ?: throw TypeCastException("Field value type isn't SwapAnimatedEmojiDrawable")
+                val drawable = fieldGetter.invokeExact(obj) as? SwapAnimatedEmojiDrawable?
+                    ?: return null
 
                 if (drawable as? Emoji != null) {
                     drawable.setPeerUserId(peerUserId)
@@ -145,13 +141,14 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
                     badgeSlot,
                 )
 
-                field.set(obj, newDrawable)
+                fieldSetter.invokeExact(obj, newDrawable as SwapAnimatedEmojiDrawable)
 
                 EmojiRegistry.add(
                     EjectData(
                         WeakReference(newDrawable),
                         WeakReference(obj),
-                        field,
+                        fieldGetter,
+                        fieldSetter,
                         arrayIndex,
                         simpleTextView?.let(::WeakReference)
                     )
@@ -159,21 +156,18 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
                 return newDrawable
             }
 
-            val unknownArray = field.get(obj) ?: return null
+            @Suppress("UNCHECKED_CAST") // will be checked after
+            val array = fieldGetter.invokeExact(obj) as? Array<SwapAnimatedEmojiDrawable?>?
+                ?: return null
 
-            if (!unknownArray::class.java.isArray)
-                throw TypeCastException("Field value type isn't array")
-
-            if (unknownArray::class.java.componentType != SwapAnimatedEmojiDrawable::class.java)
+            if (array::class.java.componentType != SwapAnimatedEmojiDrawable::class.java)
                 throw TypeCastException("Field value type isn't SwapAnimatedEmojiDrawable[]")
 
-            @Suppress("UNCHECKED_CAST")
-            val array = unknownArray as Array<SwapAnimatedEmojiDrawable?>
-
             if (array.size <= arrayIndex)
-                throw IndexOutOfBoundsException("SwapAnimatedEmojiDrawable[] size is below $arrayIndex")
+                throw IndexOutOfBoundsException("SwapAnimatedEmojiDrawable[] index $arrayIndex out of range")
 
-            val drawable = array[arrayIndex] ?: return null
+            val drawable = array[arrayIndex]
+                ?: return null
 
             if (drawable as? Emoji != null) {
                 drawable.setPeerUserId(peerUserId)
@@ -185,13 +179,15 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
                 peerUserId,
                 badgeSlot,
             )
+
             array[arrayIndex] = newDrawable
 
             EmojiRegistry.add(
                 EjectData(
                     WeakReference(newDrawable),
                     WeakReference(obj),
-                    field,
+                    fieldGetter,
+                    fieldSetter,
                     arrayIndex,
                     simpleTextView?.let(::WeakReference)
                 )
@@ -232,25 +228,26 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
         null,
         0
     ) {
-        cloneFields(base, this, EMOJI_FIELDS)
+        cloneFields(base, this, `SwapAnimatedEmojiDrawable$$fields`)
         this.badgeSlot = badgeSlot
 
-        this.size = SIZE.getInt(this)
+        this.size =
+            `SwapAnimatedEmojiDrawable$size`.invokeExact(this as SwapAnimatedEmojiDrawable) as Int
         this.gap = size / 5
 
-        PARENT_VIEW.getAs<View>(this)?.let {
-            EmojiRegistry.attachTouchHandler(it, this)
-        }
+        val parentView =
+            `SwapAnimatedEmojiDrawable$parentView`.invokeExact(this as SwapAnimatedEmojiDrawable) as? View
+        parentView?.let { EmojiRegistry.attachTouchHandler(it, this) }
 
         createHolders()
 
         setPeerUserId(peerUserId)
     }
 
-    // -- фабрики --
-
     private fun createHolders() {
-        val parentView = PARENT_VIEW.getAs<View>(this) ?: return
+        val parentView =
+            `SwapAnimatedEmojiDrawable$parentView`.invokeExact(this as SwapAnimatedEmojiDrawable) as? View
+                ?: return
 
         for (factory in BadgesSdkService.getFactories()) {
             val view = try {
@@ -337,8 +334,6 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
         }
     }
 
-    // -- состояние --
-
     private fun setClientBadge(badgeDocumentId: Long?) {
         // тот же бейдж - не пересоздаём, иначе анимация будет дёргаться на каждый refresh
         if (badgeDocumentId == clientBadgeDocumentId && (badgeDocumentId == null) == (clientBadge == null))
@@ -351,7 +346,9 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
             return
         }
 
-        val parentView = PARENT_VIEW.getAs<View>(this) ?: return
+        val parentView =
+            `SwapAnimatedEmojiDrawable$parentView`.invokeExact(this as SwapAnimatedEmojiDrawable) as? View
+                ?: return
 
         clientBadge?.detach()
         clientBadge = SwapAnimatedEmojiDrawable(parentView, size).apply {
@@ -445,8 +442,6 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
 
         return extrasWidth != previousWidth
     }
-
-    // -- геометри деш --
 
     private fun measure(holder: BadgeHolder) {
         holder.view.measure(
@@ -582,8 +577,6 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
 
         return handled
     }
-
-    // -- отрисовка --
 
     override fun draw(canvas: Canvas) {
         if (!hideOriginal)

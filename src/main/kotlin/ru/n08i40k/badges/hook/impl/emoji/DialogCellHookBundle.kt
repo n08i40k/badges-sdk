@@ -10,22 +10,13 @@ import org.telegram.ui.DialogsActivity
 import ru.n08i40k.badges.emoji.Emoji
 import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
-import ru.n08i40k.badges.util.getAs
-import ru.n08i40k.badges.util.getAsUnchecked
-import ru.n08i40k.badges.util.getField
+import ru.n08i40k.badges.util.`DialogCell$currentDialogId`
+import ru.n08i40k.badges.util.`DialogCell$emojiStatus`
+import ru.n08i40k.badges.util.`DialogCell$emojiStatus$$setter`
+import ru.n08i40k.badges.util.`DialogCell$emojiStatusView`
 import ru.n08i40k.badges.util.isClientVersionBelow
 
 internal class DialogCellHookBundle : HookBundle() {
-    private companion object Fields {
-        val CLASS = DialogCell::class.java
-
-        val EMOJI_STATUS = getField(CLASS, "emojiStatus")
-        val CURRENT_DIALOG_ID = getField(CLASS, "currentDialogId")
-
-        // отсутствует в клиентах ниже 12.2.6
-        val EMOJI_STATUS_VIEW by lazy { getField(CLASS, "emojiStatusView") }
-    }
-
     override fun inject(
         before: InstallHook,
         after: InstallHook
@@ -44,7 +35,8 @@ internal class DialogCellHookBundle : HookBundle() {
         { param ->
             Emoji.encapsulate(
                 param.thisObject,
-                EMOJI_STATUS,
+                `DialogCell$emojiStatus`,
+                `DialogCell$emojiStatus$$setter`,
                 null,
                 0,
                 badgeSlot = Emoji.BadgeSlot.STATUS_OR_NAME,
@@ -59,8 +51,8 @@ internal class DialogCellHookBundle : HookBundle() {
         ) { param ->
             val obj = param.thisObject as DialogCell
 
-            EMOJI_STATUS.getAs<Emoji>(obj)
-                ?.setPeerUserId(CURRENT_DIALOG_ID.getLong(obj))
+            (`DialogCell$emojiStatus`.invokeExact(param.thisObject) as SwapAnimatedEmojiDrawable? as? Emoji)
+                ?.setPeerUserId(`DialogCell$currentDialogId`.invokeExact(obj) as Long)
         }
 
         // Фикс отрисовки текста в местах, где размер view ограничен по x.
@@ -79,8 +71,11 @@ internal class DialogCellHookBundle : HookBundle() {
             ) { param ->
                 val obj = param.thisObject as DialogCell
 
-                val emojiStatusView = EMOJI_STATUS_VIEW.getAsUnchecked<View>(obj)
-                val emojiStatus = EMOJI_STATUS.getAsUnchecked<SwapAnimatedEmojiDrawable>(obj)
+                val emojiStatusView =
+                    `DialogCell$emojiStatusView`!!.invokeExact(obj) as View
+
+                val emojiStatus =
+                    `DialogCell$emojiStatus`.invokeExact(param.thisObject) as SwapAnimatedEmojiDrawable
 
                 val height = dp(22f)
 
