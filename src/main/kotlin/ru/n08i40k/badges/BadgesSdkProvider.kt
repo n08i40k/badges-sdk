@@ -120,28 +120,32 @@ public class BadgesSdkProvider private constructor() {
         }
 
         fun before(method: Member, callback: (XC_MethodHook.MethodHookParam) -> Unit) {
+            val action = "run $method before-call hook"
+
             add(
                 method,
                 object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
-                        Logger.tryOrFatal("run $method before-call hook") { callback(param) }
+                        Logger.tryOrFatal(action) { callback(param) }
                     }
                 }
             )
         }
 
         fun after(method: Member, callback: (XC_MethodHook.MethodHookParam) -> Unit) {
+            val action = "run $method after-call hook"
+
             add(
                 method,
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        Logger.tryOrFatal("run $method after-call hook") { callback(param) }
+                        Logger.tryOrFatal(action) { callback(param) }
                     }
                 }
             )
         }
 
-        val bundles = listOf(
+        val bundles = arrayOf(
             UserPutHookBundle(),
             DialogCellHookBundle(),
             ChatMessageCellHookBundle(),
