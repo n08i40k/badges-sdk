@@ -15,8 +15,10 @@ internal object Logger {
         Log.e(BadgesSdkProvider.ID, message, exception)
 
         if (!suppressFatal && !preventEject) {
-            BadgesSdkProvider.destroy()
+            suppressFatal = true
+
             BadgesSdkProvider.FATAL_EXCEPTION_HANDLER?.invoke(exception)
+            runCatching { BadgesSdkProvider.destroy() }
         }
     }
 
