@@ -9,6 +9,13 @@ private val targetSdkMajorProperty: Provider<Int> =
 private val targetSdkMinorProperty: Provider<Int> =
     providers.gradleProperty("targetSdkMinor").map { it.toInt() }
 
+buildscript {
+    dependencies {
+        classpath(libs.kotlin.gradle.plugin)
+//        classpath("com.google.devtools.ksp:symbol-processing-gradle-plugin:2.3.0-1.0.20")
+    }
+}
+
 plugins {
     id("maven-publish")
     alias(libs.plugins.android.library)
@@ -78,11 +85,12 @@ android {
 }
 
 kotlin {
+    version = "2.4.20"
+
     explicitApi()
 
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
-        freeCompilerArgs.add("-Xmetadata-version=2.2.0")
         freeCompilerArgs.add("-Xdont-warn-on-error-suppression")
         optIn.add("kotlin.time.ExperimentalTime")
     }
