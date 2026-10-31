@@ -1,6 +1,7 @@
 package ru.n08i40k.badges.emoji
 
 import android.graphics.Canvas
+import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.view.MotionEvent
 import android.view.View
@@ -431,6 +432,14 @@ internal class Emoji : SwapAnimatedEmojiDrawable {
     fun refresh() = setPeerUserId(peerUserId)
 
     fun hasVisibleBadges(): Boolean = holders.any { it.visible }
+
+    fun badgeBounds(factory: ViewFactory, parent: View): RectF? {
+        val owner = `SwapAnimatedEmojiDrawable$parentView`.invokeExact(this as SwapAnimatedEmojiDrawable) as? View
+        if (owner !== parent) return null
+        val holder = holders.firstOrNull { it.visible && it.viewFactory == factory } ?: return null
+        val top = extrasTop().toFloat()
+        return RectF(holder.left.toFloat(), top, (holder.left + holder.width).toFloat(), top + size)
+    }
 
     // Пере-привязать views одной фабрики; возвращает true, если ширина изменилась
     // и ячейку, в которой мы живём, надо пере-измерить

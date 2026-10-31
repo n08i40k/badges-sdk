@@ -1,5 +1,8 @@
 package ru.n08i40k.badges
 
+import android.graphics.RectF
+import android.view.View
+
 import ru.n08i40k.badges.BuildConfig.BUILD_VERSION
 import ru.n08i40k.badges.api.BadgesSdk
 import ru.n08i40k.badges.api.ViewFactory
@@ -53,6 +56,9 @@ internal object BadgesSdkService : BadgesSdk {
         if (EmojiRegistry.rebindAll(params.viewFactory, params.userId))
             EmojiRegistry.refreshDialogCells()
     }
+
+    override fun getBadgeBounds(factory: ViewFactory, parent: View): RectF? =
+        EmojiRegistry.badgeBounds(factory, parent)
 
     // фабрики живут ровно столько же, сколько и плагин
     internal fun clear() {

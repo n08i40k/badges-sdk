@@ -125,6 +125,10 @@ internal val `DialogCell$emojiStatus$$setter` =
         .retype(Void.TYPE, Any::class.java, SwapAnimatedEmojiDrawable::class.java)
 
 @JvmField
+internal val `DialogCell$drawVerified` =
+    getFieldGetterIfExists(DialogCell::class.java, "drawVerified")
+
+@JvmField
 internal val `DialogCell$currentDialogId` =
     getFieldGetter(DialogCell::class.java, "currentDialogId")
 

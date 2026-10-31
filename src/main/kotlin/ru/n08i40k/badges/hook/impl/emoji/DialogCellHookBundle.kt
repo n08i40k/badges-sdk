@@ -1,8 +1,10 @@
 package ru.n08i40k.badges.hook.impl.emoji
 
 import android.content.Context
+import android.graphics.Canvas
 import android.view.View
 import org.telegram.messenger.AndroidUtilities.dp
+import org.telegram.messenger.SharedConfig
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.DialogCell
 import org.telegram.ui.Components.AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable
@@ -11,6 +13,7 @@ import ru.n08i40k.badges.emoji.Emoji
 import ru.n08i40k.badges.hook.HookBundle
 import ru.n08i40k.badges.hook.InstallHook
 import ru.n08i40k.badges.util.`DialogCell$currentDialogId`
+import ru.n08i40k.badges.util.`DialogCell$drawVerified`
 import ru.n08i40k.badges.util.`DialogCell$emojiStatus`
 import ru.n08i40k.badges.util.`DialogCell$emojiStatus$$setter`
 import ru.n08i40k.badges.util.`DialogCell$emojiStatusView`
@@ -53,6 +56,24 @@ internal class DialogCellHookBundle : HookBundle() {
 
             (`DialogCell$emojiStatus`.invokeExact(param.thisObject) as SwapAnimatedEmojiDrawable? as? Emoji)
                 ?.setPeerUserId(`DialogCell$currentDialogId`.invokeExact(obj) as Long)
+        }
+
+        val drawVerified = `DialogCell$drawVerified`
+        val statusViewGetter = `DialogCell$emojiStatusView`
+        if (statusViewGetter != null && drawVerified != null) {
+            after(DialogCell::class.java.getDeclaredMethod("onDraw", Canvas::class.java)) { param ->
+                val cell = param.thisObject as DialogCell
+                if (!(drawVerified.invokeExact(cell) as Boolean)) return@after
+                val emoji = `DialogCell$emojiStatus`.invokeExact(param.thisObject) as SwapAnimatedEmojiDrawable? as? Emoji
+                    ?: return@after
+                if (!emoji.hasVisibleBadges()) return@after
+                val layout = cell.nameLayout ?: return@after
+                val statusView = statusViewGetter.invokeExact(cell) as View
+                val checkWidth = Theme.dialogs_verifiedDrawable.intrinsicWidth
+                statusView.translationX = cell.nameLeft + layout.getLineWidth(0) + dp(6f) + checkWidth + dp(4f)
+                statusView.translationY = dp(if (SharedConfig.useThreeLinesLayout) 11f else 13f).toFloat()
+                statusView.visibility = View.VISIBLE
+            }
         }
 
         // Фикс отрисовки текста в местах, где размер view ограничен по x.

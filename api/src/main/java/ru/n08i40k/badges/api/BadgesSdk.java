@@ -1,5 +1,8 @@
 package ru.n08i40k.badges.api;
 
+import android.graphics.RectF;
+import android.view.View;
+
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -133,4 +136,8 @@ public interface BadgesSdk {
      * @param params factory and optional user to rebind
      */
     void rebindViews(@NotNull RebindViewsParams params);
+
+    @Nullable default RectF getBadgeBounds(@NotNull ViewFactory factory, @NotNull View parent) {
+        return null;
+    }
 }

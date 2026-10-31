@@ -1,10 +1,12 @@
 package ru.n08i40k.badges.emoji
 
+import android.graphics.RectF
 import android.view.View
 import androidx.annotation.UiThread
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.ActionBarLayout
 import org.telegram.ui.ActionBar.INavigationLayout
+import org.telegram.ui.Cells.DialogCell
 import org.telegram.ui.DialogsActivity
 import org.telegram.ui.LaunchActivity
 import ru.n08i40k.badges.api.ViewFactory
@@ -127,12 +129,25 @@ internal object EmojiRegistry {
             val emoji = data.drawable.get() ?: continue
 
             Logger.tryOrFatal("rebind badge views") {
-                if (emoji.rebindFactory(factory, userId))
+                if (emoji.rebindFactory(factory, userId)) {
                     resized = true
+                    (data.targetObject.get() as? DialogCell)?.let { cell ->
+                        cell.buildLayout()
+                        cell.requestLayout()
+                        cell.invalidate()
+                    }
+                }
             }
         }
 
         return resized
+    }
+
+    fun badgeBounds(factory: ViewFactory, parent: View): RectF? {
+        for (data in elements.values) {
+            data.drawable.get()?.badgeBounds(factory, parent)?.let { return it }
+        }
+        return null
     }
 
     fun refreshDialogCells() {
