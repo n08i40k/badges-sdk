@@ -20,6 +20,7 @@ import org.telegram.ui.Components.StatusBadgeComponent
 import org.telegram.ui.DialogsActivity
 import org.telegram.ui.LaunchActivity
 import org.telegram.ui.ProfileActivity
+import java.lang.invoke.MethodHandle
 
 @JvmField
 internal val `ChatAvatarContainer$parentFragment` =
@@ -144,27 +145,64 @@ internal val `ProfileActivity$userId` =
 @JvmField
 internal val `ProfileActivity$nameTextView` =
     getFieldGetter(ProfileActivity::class.java, "nameTextView")
+        .retype(Any::class.java, ProfileActivity::class.java)
+
+internal fun profileNameTextView(profile: ProfileActivity): SimpleTextView? {
+    return when (val nameField: Any? = `ProfileActivity$nameTextView`.invokeExact(profile)) {
+        is SimpleTextView -> nameField
+        is Array<*> -> nameField.getOrNull(1) as? SimpleTextView
+        else -> null
+    }
+}
+
+// Emoji.encapsulate принимает владельца поля как Any и ожидает исходный тип значения.
+private fun MethodHandle.withObjectReceiver(): MethodHandle =
+    asType(type().changeParameterType(0, Any::class.java))
 
 @JvmField
 internal val `ProfileActivity$emojiStatusDrawable` =
     getFieldGetter(ProfileActivity::class.java, "emojiStatusDrawable")
-        .retype(Array<SwapAnimatedEmojiDrawable>::class.java, Any::class.java)
+        .withObjectReceiver()
 
 @JvmField
 internal val `ProfileActivity$emojiStatusDrawable$$setter` =
     getFieldSetter(ProfileActivity::class.java, "emojiStatusDrawable")
-        .retype(Void.TYPE, Any::class.java, Array<SwapAnimatedEmojiDrawable>::class.java)
-
-// поле клиента, появилось в 12.5.1
-@JvmField
-internal val `ProfileActivity$badgeDrawable` =
-    getFieldGetterIfExists(ProfileActivity::class.java, "badgeDrawable")
-        ?.retype(Array<SwapAnimatedEmojiDrawable>::class.java, Any::class.java)
+        .withObjectReceiver()
 
 @JvmField
 internal val `ProfileActivity$badgeDrawable$$setter` =
     getFieldSetterIfExists(ProfileActivity::class.java, "badgeDrawable")
-        ?.retype(Void.TYPE, Any::class.java, Array<SwapAnimatedEmojiDrawable>::class.java)
+        ?.withObjectReceiver()
+
+@JvmField
+internal val `ProfileActivity$badgeDrawable` =
+    `ProfileActivity$badgeDrawable$$setter`
+        ?.let {
+            getFieldGetterIfExists(ProfileActivity::class.java, "badgeDrawable")
+                ?.withObjectReceiver()
+        }
+
+internal fun profileDrawableIndex(getter: MethodHandle): Int? =
+    if (getter.type().returnType().isArray) 1 else null
+
+@Suppress("UNCHECKED_CAST")
+internal fun profileDrawable(profile: Any, getter: MethodHandle?): SwapAnimatedEmojiDrawable? {
+    if (getter == null)
+        return null
+
+    val index = profileDrawableIndex(getter)
+
+    return if (index == null)
+        getter.invokeExact(profile) as SwapAnimatedEmojiDrawable?
+    else
+        (getter.invokeExact(profile) as Array<SwapAnimatedEmojiDrawable?>?)
+            ?.getOrNull(index)
+}
+
+@JvmField
+internal val `ProfileActivity$updateProfileData` = runCatching {
+    ProfileActivity::class.java.getDeclaredMethod("updateProfileData", Boolean::class.java)
+}
 
 @JvmField
 internal val `ProfileSearchCell$statusDrawable` =

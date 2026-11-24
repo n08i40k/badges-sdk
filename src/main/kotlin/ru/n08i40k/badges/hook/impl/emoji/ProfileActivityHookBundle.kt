@@ -1,8 +1,6 @@
 package ru.n08i40k.badges.hook.impl.emoji
 
 import android.graphics.drawable.Drawable
-import org.telegram.ui.ActionBar.SimpleTextView
-import org.telegram.ui.Components.AnimatedEmojiDrawable
 import org.telegram.ui.ProfileActivity
 import ru.n08i40k.badges.emoji.Emoji
 import ru.n08i40k.badges.hook.HookBundle
@@ -11,35 +9,19 @@ import ru.n08i40k.badges.util.`ProfileActivity$badgeDrawable`
 import ru.n08i40k.badges.util.`ProfileActivity$badgeDrawable$$setter`
 import ru.n08i40k.badges.util.`ProfileActivity$emojiStatusDrawable`
 import ru.n08i40k.badges.util.`ProfileActivity$emojiStatusDrawable$$setter`
-import ru.n08i40k.badges.util.`ProfileActivity$nameTextView`
+import ru.n08i40k.badges.util.`ProfileActivity$updateProfileData`
 import ru.n08i40k.badges.util.`ProfileActivity$userId`
-import java.lang.invoke.MethodHandle
+import ru.n08i40k.badges.util.profileDrawable
+import ru.n08i40k.badges.util.profileDrawableIndex
+import ru.n08i40k.badges.util.profileNameTextView
 
 internal class ProfileActivityHookBundle : HookBundle() {
-    private companion object Fields {
-        val CLASS = ProfileActivity::class.java
-
-        val HOST_FIELDS = listOfNotNull(
-            `ProfileActivity$emojiStatusDrawable` to `ProfileActivity$emojiStatusDrawable$$setter`,
-            `ProfileActivity$badgeDrawable` to `ProfileActivity$badgeDrawable$$setter`
-        )
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun getDrawable(fragment: Any, field: MethodHandle): Drawable? =
-        (field.invokeExact(fragment) as Array<AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable?>)[1]
-
     override fun inject(
         before: InstallHook,
         after: InstallHook
     ) {
         // Профиль пользователя
-        after(
-            ProfileActivity::class.java.getDeclaredMethod(
-                "updateProfileData",
-                Boolean::class.java,
-            )
-        ) { param ->
+        after(`ProfileActivity$updateProfileData`.getOrThrow()) { param ->
             val thisObject = param.thisObject as ProfileActivity
 
             val userId = `ProfileActivity$userId`.invokeExact(thisObject) as Long
@@ -47,40 +29,55 @@ internal class ProfileActivityHookBundle : HookBundle() {
             if (userId < 0)
                 return@after
 
-            @Suppress("UNCHECKED_CAST")
-            val nameTextView = (`ProfileActivity$nameTextView`
-                .invokeExact(thisObject) as? Array<SimpleTextView?>)
-                ?.get(1)
+            val nameTextView = profileNameTextView(thisObject)
                 ?: return@after
 
-            // при пустом статусе клиент отдаёт правому drawable бейдж, а не emojiStatusDrawable
-            val hostField = HOST_FIELDS
-                .firstOrNull { (getter, _) ->
-                    val drawable = getDrawable(thisObject, getter ?: return@firstOrNull false)
+            val rightDrawable = nameTextView.rightDrawable
+            val rightDrawable2 = nameTextView.rightDrawable2
 
-                    drawable != null
-                            && (drawable === nameTextView.rightDrawable
-                            || drawable === nameTextView.rightDrawable2)
-                }
-                ?.let { (getter, setter) -> getter!! to setter!! }
-                ?: return@after
+            fun isDisplayed(drawable: Drawable?): Boolean =
+                drawable != null && (drawable === rightDrawable || drawable === rightDrawable2)
 
+            val status = profileDrawable(thisObject, `ProfileActivity$emojiStatusDrawable`)
+            val badge = profileDrawable(thisObject, `ProfileActivity$badgeDrawable`)
 
-            val isSecondary =
-                getDrawable(thisObject, hostField.first) === nameTextView.rightDrawable2
+            // При пустом статусе клиент может показывать бейдж в правом слоте.
+            val usesStatus = when {
+                isDisplayed(status) -> true
+                isDisplayed(badge) -> false
+                else -> return@after
+            }
 
-            HOST_FIELDS
-                .filter { it !== hostField }
-                .forEach { (getter, _) ->
-                    val drawable = getDrawable(thisObject, getter ?: return@forEach) as? Emoji
-                    drawable?.setPeerUserId(0L)
-                }
+            val getter =
+                if (usesStatus)
+                    `ProfileActivity$emojiStatusDrawable`
+                else
+                    `ProfileActivity$badgeDrawable`
+                        ?: return@after
+
+            val setter =
+                if (usesStatus)
+                    `ProfileActivity$emojiStatusDrawable$$setter`
+                else
+                    `ProfileActivity$badgeDrawable$$setter`
+                        ?: return@after
+
+            val isSecondary = (if (usesStatus) status else badge) === rightDrawable2
+
+            val other =
+                if (usesStatus)
+                    badge
+                else
+                    status
+
+            (other as? Emoji)
+                ?.setPeerUserId(0L)
 
             val emoji = Emoji.encapsulate(
                 thisObject,
-                hostField.first,
-                hostField.second,
-                1,
+                getter,
+                setter,
+                profileDrawableIndex(getter),
                 userId,
                 badgeSlot = Emoji.BadgeSlot.SEPARATE,
                 simpleTextView = nameTextView,

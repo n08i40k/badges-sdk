@@ -78,7 +78,8 @@ internal class ChatMessageCellHookBundle : HookBundle() {
                 else
                     return@before
 
-            val thisObject = ChatMessageCell::class.java.cast(savedCellRef.get() ?: return@before)!!
+            val thisObject = ChatMessageCell::class.java
+                .cast(savedCellRef.get() ?: return@before)!!
 
             val emoji = Emoji.encapsulate(
                 thisObject,
@@ -91,8 +92,12 @@ internal class ChatMessageCellHookBundle : HookBundle() {
             ) ?: return@before
 
             when {
-                `ChatMessageCell$nameLayoutWidth` != null -> fitLegacyNameLayout(thisObject, emoji)
-                `ChatMessageCell$drawNameStatus` != null -> fitNameLayout(thisObject, emoji)
+                `ChatMessageCell$drawNameStatus` != null ->
+                    fitNameLayout(thisObject, emoji)
+
+                `ChatMessageCell$nameLayoutWidth` != null && `ChatMessageCell$viaNameWidth` != null ->
+                    fitLegacyNameLayout(thisObject, emoji)
+
                 else -> return@before
             }
 
@@ -176,9 +181,13 @@ internal class ChatMessageCellHookBundle : HookBundle() {
         }
 
         // nameStatusOffsetX указывает на начало FixedWidthSpan и после расширения не меняется
-        widenNameStatusSpan(cell, extraPx, nameLayout.width + extraPx)
+        val newLayout = widenNameStatusSpan(cell, extraPx, nameLayout.width + extraPx)
             ?: return
 
+        `ChatMessageCell$nameLayoutWidth$$setter`?.invokeExact(
+            cell,
+            ceil(newLayout.getLineWidth(0)).toInt()
+        )
         `ChatMessageCell$viaWidth$$setter`.invokeExact(cell, extraPx)
     }
 
@@ -196,7 +205,8 @@ internal class ChatMessageCellHookBundle : HookBundle() {
         val nameLayout = `ChatMessageCell$nameLayout`.invokeExact(cell) as? StaticLayout
             ?: return null
 
-        val text = nameLayout.text as? Spanned ?: return null
+        val text = nameLayout.text as? Spanned
+            ?: return null
 
         val span = text.getSpans(0, text.length, DialogCell.FixedWidthSpan::class.java)
             .lastOrNull()
